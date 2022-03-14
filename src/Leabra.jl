@@ -74,37 +74,8 @@ mutable struct Unit
     const l_up_inc::Float64   # = 0.2;          # increase in avg_l if avg_m has been 'large'   
     
     function Unit()
-        return new( 0.2,
-                    0.2,
-                    0.2,
-                    0.2,
-                    0.1,
-                    0.0,
-                    0.3,
-                    0.3,
-                    0.0,
-                    false,
-                    1/1.4,
-                    1.0,
-                    1/3.3,
-                    1/2.5,
-                    1/144,
-                    0.5,
-                    0.5,
-                    0.1,
-                    0.1,
-                    1.5,
-                    0.1,
-                    1.0,
-                    0.25,
-                    0.3,
-                    0.1,
-                    0.5,
-                    1.2,
-                    0.3,
-                    0.04,
-                    0.00805,
-                    0.2)
+        return new( 0.2, 0.2, 0.2, 0.2, 0.1, 0.0, 0.3, 0.3, 0.0, false,
+                    1/1.4, 1.0, 1/3.3, 1/2.5, 1/144, 0.5, 0.5, 0.1, 0.1, 1.5, 0.1, 1.0, 0.25, 0.3, 0.1, 0.5, 1.2, 0.3, 0.04, 0.00805, 0.2)
      end    
 end
     
@@ -112,11 +83,7 @@ function rel_avg_l(u::Unit)::Float64
     return (u.avg_l - u.avg_l_min)/(u.avg_l_max - u.avg_l_min)
 end
 
-function l_avg_rel(u::Unit)::Float64
-    return (u.avg_l - u.avg_l_min)/(u.avg_l_max - u.avg_l_min)
-end
-# myunit = Unit()
-# println(myunit)
+
 function cycle(u::Unit, net_raw::Float64, gc_i::Float64)
     # Does one Leabra cycle. Called by the layer cycle method.
     # net_raw = instantaneous, scaled, received input
@@ -151,22 +118,6 @@ function cycle(u::Unit, net_raw::Float64, gc_i::Float64)
         new_act = nxx1(u.net - g_e_thr)[1]
     end
 
-    # println("begin unit stuff")
-    # println((u.act))
-    # println((u.integ_dt))
-    # println((u.vm_dt))
-    # println((new_act))
-    # println("end unit stuff")
-    # ()
-    # ()
-    # ()
-    # (1,)
-
-    # 0.0
-    # 1.0
-    # 0.30303030303030304
-    # [1.4138202523385987e-41] 
-
     # update activity
     u.act = u.act + u.integ_dt * u.vm_dt * (new_act - u.act)
 
@@ -178,8 +129,6 @@ function cycle(u::Unit, net_raw::Float64, gc_i::Float64)
     u.avg_s = u.avg_s + u.integ_dt * u.s_dt * (u.avg_ss - u.avg_s)
     u.avg_m = u.avg_m + u.integ_dt * u.m_dt * (u.avg_s - u.avg_m) 
 end
-
-       
 
 
 function updt_avg_l(u::Unit)
@@ -211,7 +160,97 @@ function reset(u::Unit)
     u.spike = 0.0            
 end
 
+function XX1(x::Float64)
+    return x / (x + 1)
+end
 
+function XX1GainCor(x::Float64, GainCorRange, NVar, Gain, GainCor)
+    gainCorFact = (GainCorRange - (x / NVar)) / GainCorRange
+    if gainCorFact < 0
+        return XX1(Gain * x)
+    end
+    newGain = Gain * (1 - GainCor*gainCorFact)
+    return XX1(newGain * x)
+end   
+
+struct NXX1Params
+    Thr::Float64            # = 0.5
+    Gain::Int64             # = 100
+    NVar::Float64           # = 0.005
+    VmActThr::Float64       # = 0.01
+    SigMult::Float64        # = 0.33
+    SigMultPow::Float64     # = 0.8
+    SigGain::Float64        # = 3.0
+    InterpRange::Float64    # = 0.01
+    GainCorRange::Float64   # = 10.0
+    GainCor::Float64        # = 0.1
+
+	SigGainNVar::Float64    # = SigGain / NVar
+	SigMultEff::Float64     # = SigMult * ((Gain* NVar) ^ SigMultPow)
+	SigValAt0::Float64      # = 0.5 * SigMultEff
+	InterpVal::Float64      # = XX1GainCor(InterpRange, GainCorRange, NVar, Gain, GainCor) - SigValAt0
+
+    function Unit()
+        return new(0.5, 100, 0.005, 0.01, 0.33, 0.8, 3.0, 0.01, 10.0, 0.1, 
+                   3.0/0.005, (0.33 * ((100*0.005)^0.8)), 0.5 * (0.33 * ((100*0.005)^0.8)), 
+                   XX1GainCor(0.01,10.0,0.005,100,0.1) - (0.5 * (0.33 * ((100*0.005)^0.8))) )
+    end
+end
+
+
+function XX1GainCor(x::Float64, xp::NXX1Params)
+    gainCorFact = (xp.GainCorRange - (x / xp.NVar)) / xp.GainCorRange
+    if gainCorFact < 0
+        return XX1(xp.Gain * x)
+    end
+    newGain = xp.Gain * (1 - xp.GainCor*gainCorFact)
+    return XX1(newGain * x)
+end  
+
+function NoisyXX1(x::Float64, xp::NXX1Params)
+	if x < 0
+		return xp.SigMultEff / (1 + exp(-(x * xp.SigGainNVar)))
+	elseif x < xp.InterpRange
+		interp = 1 - ((xp.InterpRange - x) / xp.InterpRange)
+		return xp.SigValAt0 + interp*xp.InterpVal
+	else
+		return XX1GainCor(x, xp)
+    end
+end
+
+function XX1GainCorGain(x::Float64, gain::Float64, xp::NXX1Params)
+	gainCorFact = (xp.GainCorRange - (x / xp.NVar)) / xp.GainCorRange
+	if gainCorFact < 0
+		return XX1(gain * x)
+    end
+	newGain = gain * (1 - xp.GainCor*gainCorFact)
+	return XX1(newGain * x)
+end
+
+function NoisyXX1Gain(x::Float64, gain::Float64, xp::NXX1Params)
+	if x < xp.InterpRange
+		sigMultEffArg = xp.SigMult * (gain*xp.NVar ^ xp.SigMultPow)
+		sigValAt0Arg = 0.5 * sigMultEffArg
+
+		if x < 0 # sigmoidal for < 0
+			return sigMultEffArg / (1 + exp(-(x * xp.SigGainNVar)))
+		else # else x < interp_range
+			interp = 1 - ((xp.InterpRange - x) / xp.InterpRange)
+			return sigValAt0Arg + interp*xp.InterpVal
+        end
+	else
+		return xp.XX1GainCorGain(x, gain, xp)
+    end
+end
+
+function nxx1(points)
+    xp = NXX1Params()
+    results = Array{Float64}(undef, length(points))
+    for (index,value) in enumerate(points)
+        results[index] = NoisyXX1(value, xp)
+    end
+    return results
+end
 
 
 
