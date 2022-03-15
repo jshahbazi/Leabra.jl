@@ -160,6 +160,7 @@ function reset(u::Unit)
     u.spike = 0.0            
 end
 
+
 function XX1(x::Float64)
     return x / (x + 1)
 end
@@ -173,7 +174,7 @@ function XX1GainCor(x::Float64, GainCorRange, NVar, Gain, GainCor)
     return XX1(newGain * x)
 end   
 
-struct NXX1Params
+struct NXX1Parameters
     Thr::Float64            # = 0.5
     Gain::Int64             # = 100
     NVar::Float64           # = 0.005
@@ -190,15 +191,16 @@ struct NXX1Params
 	SigValAt0::Float64      # = 0.5 * SigMultEff
 	InterpVal::Float64      # = XX1GainCor(InterpRange, GainCorRange, NVar, Gain, GainCor) - SigValAt0
 
-    function Unit()
+    function NXX1Parameters()
         return new(0.5, 100, 0.005, 0.01, 0.33, 0.8, 3.0, 0.01, 10.0, 0.1, 
                    3.0/0.005, (0.33 * ((100*0.005)^0.8)), 0.5 * (0.33 * ((100*0.005)^0.8)), 
                    XX1GainCor(0.01,10.0,0.005,100,0.1) - (0.5 * (0.33 * ((100*0.005)^0.8))) )
     end
 end
 
+nxx1p = NXX1Parameters() # default set of parameters to pass in to functions
 
-function XX1GainCor(x::Float64, xp::NXX1Params)
+function XX1GainCor(x::Float64, xp::NXX1Parameters = nxx1p)
     gainCorFact = (xp.GainCorRange - (x / xp.NVar)) / xp.GainCorRange
     if gainCorFact < 0
         return XX1(xp.Gain * x)
@@ -207,18 +209,18 @@ function XX1GainCor(x::Float64, xp::NXX1Params)
     return XX1(newGain * x)
 end  
 
-function NoisyXX1(x::Float64, xp::NXX1Params)
+function NoisyXX1(x::Float64, xp::NXX1Parameters = nxx1p)
 	if x < 0
 		return xp.SigMultEff / (1 + exp(-(x * xp.SigGainNVar)))
 	elseif x < xp.InterpRange
 		interp = 1 - ((xp.InterpRange - x) / xp.InterpRange)
 		return xp.SigValAt0 + interp*xp.InterpVal
 	else
-		return XX1GainCor(x, xp)
+		return XX1GainCor(x)
     end
 end
 
-function XX1GainCorGain(x::Float64, gain::Float64, xp::NXX1Params)
+function XX1GainCorGain(x::Float64, gain::Float64, xp::NXX1Parameters = nxx1p)
 	gainCorFact = (xp.GainCorRange - (x / xp.NVar)) / xp.GainCorRange
 	if gainCorFact < 0
 		return XX1(gain * x)
@@ -227,7 +229,7 @@ function XX1GainCorGain(x::Float64, gain::Float64, xp::NXX1Params)
 	return XX1(newGain * x)
 end
 
-function NoisyXX1Gain(x::Float64, gain::Float64, xp::NXX1Params)
+function NoisyXX1Gain(x::Float64, gain::Float64, xp::NXX1Parameters = nxx1p)
 	if x < xp.InterpRange
 		sigMultEffArg = xp.SigMult * (gain*xp.NVar ^ xp.SigMultPow)
 		sigValAt0Arg = 0.5 * sigMultEffArg
@@ -239,18 +241,35 @@ function NoisyXX1Gain(x::Float64, gain::Float64, xp::NXX1Params)
 			return sigValAt0Arg + interp*xp.InterpVal
         end
 	else
-		return xp.XX1GainCorGain(x, gain, xp)
+		return xp.XX1GainCorGain(x, gain)
     end
 end
 
-function nxx1(points)
-    xp = NXX1Params()
+function test_nxx1(xp::NXX1Parameters = nxx1p)
+    difTol = 1.0e-7
+
+    tstx = [-0.05, -0.04, -0.03, -0.02, -0.01, 0, .01, .02, .03, .04, .05, .1, .2, .3, .4, .5]
+    cory = [1.7735989e-14, 7.155215e-12, 2.8866178e-09, 1.1645374e-06, 0.00046864923, 0.094767615, 0.47916666, 0.65277773, 0.742268, 0.7967479, 0.8333333, 0.90909094, 0.95238096, 0.96774197, 0.9756098, 0.98039216]
+    ny = Array{Float64}(undef, length(tstx))
+
+    for i in 1:length(tstx)
+        ny[i] = NoisyXX1(tstx[i])
+        dif = abs(ny[i] - cory[i])
+        if dif > difTol # allow for small numerical diffs
+            println("XX1 err: dix: $i, x: $(tstx[i]), y: $(ny[i]), cor y: $(cory[i]), dif: $dif")
+        end
+    end
+end
+
+function nxx1(points, xp::NXX1Parameters = nxx1p)
     results = Array{Float64}(undef, length(points))
     for (index,value) in enumerate(points)
-        results[index] = NoisyXX1(value, xp)
+        results[index] = NoisyXX1(value)
     end
     return results
 end
+
+
 
 
 
