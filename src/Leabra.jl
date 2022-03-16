@@ -440,21 +440,21 @@ end
 #  Network Functions
 #
 
-@with_kw mutable struct Network
+mutable struct Network
     layers::Array{Layer}
     connections::Array{Float64, 2}
     n_lays::Int64
     n_units::Int64
     lrate::Float64
-
-    avg_l_lrn_max::Float64 = 0.01; # max amount of "BCM" learning in XCAL
-    avg_l_lrn_min::Float64 = 0.0;  # min amount of "BCM" learning in XCAL
-    m_in_s::Float64 = 0.1; # proportion of medium to short term avgs. in XCAL
-    m_lrn::Float64 = 1;  # proportion of error-driven learning in XCAL
-    d_thr::Float64 = 0.0001; # threshold for XCAL "check mark" function
-    d_rev::Float64 = 0.1;    # reversal value for XCAL "check mark" function
-    off::Float64 = 1.0;    # 'offset' in the SIG function for contrast enhancement
-    gain::Float64 = 6.0;   # gain in the SIG function for contrast enhancement
+    
+    const avg_l_lrn_max::Float64    # = 0.01; # max amount of "BCM" learning in XCAL
+    const avg_l_lrn_min::Float64    # = 0.0;  # min amount of "BCM" learning in XCAL
+    const m_in_s::Float64           # = 0.1; # proportion of medium to short term avgs. in XCAL
+    const m_lrn::Float64            # = 1;  # proportion of error-driven learning in XCAL
+    const d_thr::Float64            # = 0.0001; # threshold for XCAL "check mark" function
+    const d_rev::Float64            # = 0.1;    # reversal value for XCAL "check mark" function
+    const off::Float64              # = 1.0;    # 'offset' in the SIG function for contrast enhancement
+    const gain::Float64             # = 6.0;   # gain in the SIG function for contrast enhancement
 end
 
 
@@ -473,25 +473,18 @@ function network(dim_layers, connections, w0)
     ## Initial test of argument dimensions
     n_lay = length(dim_layers);  # number of layers
     (nrc, ncc) = size(connections);
-    # if nrc != ncc
-    #     prinitln('Non-square connections matrix in network constructor');
-    # end
-    # if nrc != n_lay
-    #     prinitln('Number of layers inconsistent with connection matrix in network constructor');
-    # end
-    # if sum(size(w0) == size(connections)) < 2
-    #     prinitln('Inconsistent dimensions between initial weights and connectivity specification in network constructor');
-    # end   
-    # if min(min(connections)) < 0
-    #     prinitln('Negative projection strengths between layers are not allowed in connections matrix');
-    # end
+
+    @assert nrc == ncc "Non-square connections matrix in network constructor"
+    @assert nrc == n_lay "Number of layers inconsistent with connection matrix in network constructor"
+    @assert sum(size(w0) .== size(connections)) >= 2 "Inconsistent dimensions between initial weights and connectivity specification in network constructor"
+    @assert all(connections .>= 0) "Negative projection strengths between layers are not allowed in connections matrix"
    
-    net = Network(
-        layers = Array{Layer, 1}(undef, n_lay),
-        connections = zeros(Float64, (n_lay, n_lay)),
-        n_lays = n_lay,
-        n_units = 0,   # counting number of units in the network
-        lrate = 0.1, # set default learning rate
+    net = Network(Array{Layer, 1}(undef, n_lay),
+                  zeros(Float64, (n_lay, n_lay)),
+                  n_lay,
+                  0,   # counting number of units in the network
+                  0.1, # set default learning rate
+                  0.01, 0.0, 0.1, 1, 0.0001, 0.1, 1.0, 6.0 #constants
     )
 
     ## Normalizing the rows of 'connections' so they add to 1
@@ -507,22 +500,21 @@ function network(dim_layers, connections, w0)
         net.n_units = net.n_units + net.layers[i].N;
     end              
 
-
     ## Second test of argument dimensions
     for i in 1:n_lay
         for j in 1:n_lay
             if w0[i,j] == 0.0
                 if connections[i,j] > 0.0
-                    println("Connected layers have no connection weights");
+                    throw("Connected layers have no connection weights");
                 end
             else
                 if connections[i,j] == 0.0
-                    println("Non-empty weight matrix for unconnected layers");
+                    throw("Non-empty weight matrix for unconnected layers");
                 end
-                
+
                 (r,c) = size(w0[i,j]);
                 if net.layers[i].N != r || net.layers[j].N != c
-                    println("Initial weigths are inconsistent with layer dimensions");
+                    throw("Initial weigths are inconsistent with layer dimensions");
                 end
             end
         end
@@ -705,7 +697,6 @@ function reset(net::Network)
     end
 end
 
-
 function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
     # This function receives a cell array w, which is like the cell
     # array w0 in the constructor: w{i,j} is the weight matrix with
@@ -715,9 +706,7 @@ function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
     # constructor.
     
     ## First we test the dimensions of w
-    if sum(size(w) == size(net.connections)) < 2
-        throw("Inconsistent dimensions between weights and connectivity specification in set_weights");
-    end
+    @assert sum(size(w) == size(net.connections)) >= 2 "Inconsistent dimensions between weights and connectivity specification in set_weights"
 
     for i in 1:net.n_lays
         for j in 1:net.n_lays
@@ -796,12 +785,8 @@ function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     #             input value. 0 -> inputs summed to netins.
     
     ## Testing the arguments and reshaping the input
-    # if ~iscell(inputs)
-    #     error('First argument to cycle function should be an inputs cell');
-    # end
-    # if length(inputs) ~= net.n_lays
-    #     error('Number of layers inconsistent with number of inputs in network cycle');
-    # end
+    @assert length(inputs) == net.n_lays "Number of layers inconsistent with number of inputs in network cycle"
+
     for inp in 1:net.n_lays  # reshaping inputs into column vectors
         if any(inputs[inp] .> 0.0) #if ~isempty(inputs[inp])
             inputs[inp] = reshape(inputs[inp], net.layers[inp].N, 1);
