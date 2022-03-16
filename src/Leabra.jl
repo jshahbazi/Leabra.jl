@@ -833,22 +833,6 @@ end # end of 'cycle' function
 #  Testing
 #
 
-function test_nxx1(xp::NXX1Parameters = nxx1p)
-    difTol = 1.0e-7
-
-    tstx = [-0.05, -0.04, -0.03, -0.02, -0.01, 0, .01, .02, .03, .04, .05, .1, .2, .3, .4, .5]
-    cory = [1.7735989e-14, 7.155215e-12, 2.8866178e-09, 1.1645374e-06, 0.00046864923, 0.094767615, 0.47916666, 0.65277773, 0.742268, 0.7967479, 0.8333333, 0.90909094, 0.95238096, 0.96774197, 0.9756098, 0.98039216]
-    ny = Array{Float64}(undef, length(tstx))
-
-    for i in 1:length(tstx)
-        ny[i] = NoisyXX1(tstx[i])
-        dif = abs(ny[i] - cory[i])
-        if dif > difTol # allow for small numerical diffs
-            println("XX1 err: dix: $i, x: $(tstx[i]), y: $(ny[i]), cor y: $(cory[i]), dif: $dif")
-        end
-    end
-end
-
 function test_layer()
     mylayer = layer((1,1))
     activities(mylayer)
@@ -973,8 +957,8 @@ function test_network()
     end
 
     mean_errs = mean(errors, dims=2);
-    println("Errors: $mean_errs")
-    @assert all(0.0 .< mean_errs) && all(mean_errs .< 1.0) "Errors are out of range"
+    println("Mean Errors: $mean_errs")
+    @assert all(0.0 .< mean_errs) && all(mean_errs .< 1.0) "Mean Errors are out of range"
 end
 
 end # module Leabra
