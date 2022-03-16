@@ -440,6 +440,415 @@ end
 #  Network Functions
 #
 
+@with_kw mutable struct Network
+    layers::Array{Layer}
+    connections::Array{Float64, 2}
+    n_lays::Int64
+    n_units::Int64
+    lrate::Float64
+
+    avg_l_lrn_max::Float64 = 0.01; # max amount of "BCM" learning in XCAL
+    avg_l_lrn_min::Float64 = 0.0;  # min amount of "BCM" learning in XCAL
+    m_in_s::Float64 = 0.1; # proportion of medium to short term avgs. in XCAL
+    m_lrn::Float64 = 1;  # proportion of error-driven learning in XCAL
+    d_thr::Float64 = 0.0001; # threshold for XCAL "check mark" function
+    d_rev::Float64 = 0.1;    # reversal value for XCAL "check mark" function
+    off::Float64 = 1.0;    # 'offset' in the SIG function for contrast enhancement
+    gain::Float64 = 6.0;   # gain in the SIG function for contrast enhancement
+end
+
+
+
+
+function network(dim_layers, connections, w0)
+    # constructor to the network class.
+    # dim_layers = 1-D cell array. dim_layers{i} is a vector [j,k], 
+    #              where j is the number of rows in layer i, and k is
+    #              the number of columns in layer i.
+    # connections = a 2D array. If layer j sends projections to 
+    #               layer i, then connections[i,j] = c > 0; 0 otherwise
+    # w0 = w0 is a cell array. w0{i,j} is the weight matrix with the
+    #      initial weights for the connections from layer j to i             
+    
+    ## Initial test of argument dimensions
+    n_lay = length(dim_layers);  # number of layers
+    (nrc, ncc) = size(connections);
+    # if nrc != ncc
+    #     prinitln('Non-square connections matrix in network constructor');
+    # end
+    # if nrc != n_lay
+    #     prinitln('Number of layers inconsistent with connection matrix in network constructor');
+    # end
+    # if sum(size(w0) == size(connections)) < 2
+    #     prinitln('Inconsistent dimensions between initial weights and connectivity specification in network constructor');
+    # end   
+    # if min(min(connections)) < 0
+    #     prinitln('Negative projection strengths between layers are not allowed in connections matrix');
+    # end
+   
+    net = Network(
+        layers = Array{Layer, 1}(undef, n_lay),
+        connections = zeros(Float64, (n_lay, n_lay)),
+        n_lays = n_lay,
+        n_units = 0,   # counting number of units in the network
+        lrate = 0.1, # set default learning rate
+    )
+
+    ## Normalizing the rows of 'connections' so they add to 1
+    row_sums = sum(connections, dims=2)
+    for row in 1:n_lay
+        if row_sums[row] > 0
+            connections[row,:] = connections[row,:] ./ row_sums[row]
+        end
+    end
+
+    for i in 1:n_lay
+        net.layers[i] = layer(dim_layers[i]);
+        net.n_units = net.n_units + net.layers[i].N;
+    end              
+
+
+    ## Second test of argument dimensions
+    for i in 1:n_lay
+        for j in 1:n_lay
+            if w0[i,j] == 0.0
+                if connections[i,j] > 0.0
+                    println("Connected layers have no connection weights");
+                end
+            else
+                if connections[i,j] == 0.0
+                    println("Non-empty weight matrix for unconnected layers");
+                end
+                
+                (r,c) = size(w0[i,j]);
+                if net.layers[i].N != r || net.layers[j].N != c
+                    println("Initial weigths are inconsistent with layer dimensions");
+                end
+            end
+        end
+    end
+    net.connections = connections; # assigning layer connection matrix
+    
+    ## Setting the inital weights for each layer
+    # first find how many units project to the layer in all the network
+    lay_inp_size::Array{Int64} = zeros(1,n_lay);
+    for i in 1:n_lay
+        for j in 1:n_lay
+            if connections[i,j] > 0  # if layer j projects to layer i
+                lay_inp_size[i] = lay_inp_size[i] + net.layers[j].N;
+            end
+        end
+    end
+
+    # add the weights for each entry in w0 as a group of columns in wt
+    for i in 1:n_lay
+        net.layers[i].wt = zeros(Float64, (net.layers[i].N, lay_inp_size[i]))
+        index = 1;
+        for j = 1:n_lay
+            if connections[i,j] > 0  # if layer j projects to layer i
+                nj = net.layers[j].N;
+                net.layers[i].wt[:,index:index+nj-1] = w0[i,j];
+                index = index + nj;
+            end
+        end
+    end 
+    
+    # set the contrast-enhanced version of the weights
+    for lay in 1:n_lay
+        net.layers[lay].ce_wt = 1 ./ (1 .+ (net.off * (1 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
+    end
+
+    return net
+end
+
+
+
+function XCAL_learn(net::Network)
+    # XCAL_learn() applies the XCAL learning equations in order to
+    # modify the weights in the network. This is typically done at
+    # the end of a plus phase. The equations used come from:
+    # https://grey.colorado.edu/ccnlab/index.php/Leabra_Hog_Prob_Fix#Adaptive_Contrast_Impl
+    # Soft weight bounding and contrast enhancememnt are as in:
+    # https://grey.colorado.edu/emergent/index.php/Leabra
+    
+    ## updating the long-term averages
+    for lay in 1:net.n_lays
+        updt_avg_l(net.layers[lay]); 
+    end
+    
+    ## Extracting the averages for all layers            
+    avg_s = Array{Vector{Float64}, 1}(undef, net.n_lays)
+    avg_m = Array{Vector{Float64}, 1}(undef, net.n_lays)
+    avg_l = Array{Vector{Float64}, 1}(undef, net.n_lays)
+    avg_s_eff = Array{Vector{Float64}, 1}(undef, net.n_lays)
+
+    for lay in 1:net.n_lays
+        (avg_s[lay], avg_m[lay], avg_l[lay]) = averages(net.layers[lay]) # layer.averages() function
+        avg_s_eff[lay] = net.m_in_s * avg_m[lay] + (1 - net.m_in_s) * avg_s[lay];
+    end
+    
+    ## obtaining avg_l_lrn
+    avg_l_lrn = Array{Vector{Float64}, 1}(undef, net.n_lays)
+    for lay in 1:net.n_lays
+        avg_l_lrn[lay] = net.avg_l_lrn_min .+ rel_avg_l(net.layers[lay]) .* (net.avg_l_lrn_max - net.avg_l_lrn_min)
+    end
+    
+    ## For each connection matrix, calculate the intermediate vars.
+    srs = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays)) # srs{i,j} = matrix of short-term averages
+                                                                        # where the rows correspond to the
+                                                                        # units of the receiving layer, columns
+                                                                        # to units of the sending layer.
+    srm = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays)) # ditto for avg_m
+    for rcv in 1:net.n_lays
+        for snd in rcv:net.n_lays
+            # notice we only calculate the 'upper triangle' of the
+            # cell arrays because of symmetry
+            if net.connections[rcv,snd] > 0 || net.connections[snd,rcv] > 0
+                srs[rcv,snd] = avg_s_eff[rcv] * transpose(avg_s_eff[snd])
+                srm[rcv,snd] = avg_m[rcv] * transpose(avg_m[snd])
+
+                if snd != rcv # using symmetry
+                    srs[snd,rcv] = transpose(srs[rcv,snd])
+                    srm[snd,rcv] = transpose(srm[rcv,snd])                             
+                end
+            end
+        end
+    end
+    
+    ## calculate the weight changes
+    dwt = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays)) # dwt{i,j} is the matrix of weight changes
+                                                                      # for the weights from layer j to i
+    for rcv in 1:net.n_lays
+        for snd in 1:net.n_lays
+            if net.connections[rcv,snd] > 0
+                sndN = net.layers[snd].N;
+                outer = (1, sndN)
+                dwt[rcv,snd] = net.lrate .* ( net.m_lrn .* xcal(net, srs[rcv,snd], srm[rcv,snd]) .+ ((expand(avg_l_lrn[rcv], 2, size(srs[rcv,snd])[2])) .* xcal(net, srs[rcv,snd], transpose(repeat(transpose(avg_l[rcv]), sndN)))));
+            end
+        end
+    end
+
+    ## update weights (with weight bounding)
+    for rcv in 1:net.n_lays                
+        DW = zeros(Float64, (net.n_lays,net.n_lays))
+        hit = false
+        for snd in 1:net.n_lays
+            if net.connections[rcv,snd] > 0
+                if !hit
+                    DW = dwt[rcv,snd]
+                else
+                    DW = hcat(DW, dwt[rcv,snd]);
+                end
+                hit = true
+            end
+        end
+        if hit #!isempty(DW)
+            # Here's the weight bounding part, as in the CCN book
+            idxp = net.layers[rcv].wt .> 0
+            idxn = .!idxp # maps ! function onto the BitArray
+            
+            net.layers[rcv].wt[idxp] = net.layers[rcv].wt[idxp] .+ (1 .- net.layers[rcv].wt[idxp]) .* DW[idxp];
+            net.layers[rcv].wt[idxn] = net.layers[rcv].wt[idxn] .+ net.layers[rcv].wt[idxn] .* DW[idxn];
+        end
+    end
+    
+    ## set the contrast-enhanced version of the weights
+    for lay in 1:net.n_lays
+        net.layers[lay].ce_wt = 1 ./ (1 .+ (net.off .* (1 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
+    end
+end # end XCAL_learn method 
+
+
+function updt_long_avgs(net::Network)
+    # updates the acts_p_avg and pct_act_scale variables for all layers. 
+    # These variables update at the end of plus phases instead of
+    # cycle by cycle. The avg_l values are not updated here.
+    # This version assumes full connectivity when updating
+    # pct_act_scale. If partial connectivity were to be used, this
+    # should have the calculation in WtScaleSpec::SLayActScale, in
+    # LeabraConSpec.cpp 
+    for lay in 1:net.n_lays
+        updt_long_avgs(net.layers[lay])
+    end
+end
+
+function m1(net::Network)
+    # obtains the m1 factor: the slope of the left-hand line in the
+    # "check mark" XCAL function. Notice it includes the negative
+    # sign.
+    return (net.d_rev - 1.0) / net.d_rev;
+end
+        
+function xcal(net::Network, x, th)
+    @assert size(x) == size(th)
+    # this function implements the "check mark" function in XCAL.
+    # x = an array of abscissa values.
+    # th = an array of threshold values, same size as x
+
+    f = zeros(size(x));
+    temp = x .> net.d_thr
+    temp2 = x .< (net.d_rev * th)
+    idx1 = temp .& temp2
+    idx2 = x .>= (net.d_rev * th);
+
+    f[idx1] = m1(net) * x[idx1];
+    f[idx2] = x[idx2] - th[idx2];
+    return f      
+end
+
+function reset(net::Network)
+    # This function sets the activity of all units to random values, 
+    # and all other dynamic variables are also set accordingly.            
+    # Used to begin trials from a random stationary point.
+    for lay = 1:net.n_lays
+        reset(net.layers[lay])
+    end
+end
+
+
+function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
+    # This function receives a cell array w, which is like the cell
+    # array w0 in the constructor: w{i,j} is the weight matrix with
+    # the initial weights for the connections from layer j to layer
+    # i. The weights are set to the values of w.
+    # This whole function is a slightly modified copypasta of the
+    # constructor.
+    
+    ## First we test the dimensions of w
+    if sum(size(w) == size(net.connections)) < 2
+        throw("Inconsistent dimensions between weights and connectivity specification in set_weights");
+    end
+
+    for i in 1:net.n_lays
+        for j in 1:net.n_lays
+            if all(w[i,j] .== 0.0) # if isempty(w[i,j])
+                if net.connections[i,j] > 0
+                    throw("Connected layers have no connection weights");
+                end
+            else
+                if net.connections[i,j] == 0
+                    throw("Non-empty weight matrix for unconnected layers");
+                end
+                (r,c) = size(w[i,j]);
+                if net.layers[i].N != r || net.layers[j].N != c
+                    throw("Initial weights are inconsistent with layer dimensions");
+                end
+            end
+        end
+    end
+    
+    ## Now we set the weights
+    # first find how many units project to the layer in all the network
+    lay_inp_size = zeros(1,net.n_lays)
+    for i in 1:net.n_lays
+        for j in 1:net.n_lays
+            if net.connections[i,j] > 0  # if layer j projects to layer i
+                lay_inp_size[i] = lay_inp_size[i] + net.layers[j].N;
+            end
+        end
+    end
+    
+    # add the weights for each entry in w0 as a group of columns in wt
+    for i in 1:net.n_lays
+        net.layers[i].wt = zeros(net.layers[i].N,lay_inp_size[i]);
+        index = 1;
+        for j in 1:net.n_lays
+            if net.connections[i,j] > 0  # if layer j projects to layer i
+                nj = net.layers[j].N;
+                net.layers[i].wt[:,index:index+nj-1] = w[i,j];
+                index = index + nj;
+            end
+        end
+    end   
+    
+    # set the contrast-enhanced version of the weights
+    for lay in 1:net.n_lays
+        net.layers[lay].ce_wt = 1 ./ (1 .+ (net.off .* (1 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
+    end
+end
+
+function get_weights(netnet::Network)
+    # This function returns a 2D cell array w.
+    # w{rcv,snd} contains the weight matrix for the projections from
+    # layer snd to layer rcv.
+    w = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays))
+    for rcv in 1:net.n_lays
+        idx1 = 1; # column where the weights from layer 'snd' start
+        for snd in 1:net.n_lays
+            if net.connections[rcv,snd] > 0
+                Nsnd = net.layers[rcv].N;
+                w[rcv,snd] = net.layers[rcv].wt[:,idx1:idx1+Nsnd-1];
+                idx1 = idx1 + Nsnd;
+            end
+        end               
+    end
+    return w
+end
+
+
+
+function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
+    # this function calls the cycle method for all layers.
+    # inputs = a cell array. inputs{i} is  a matrix that for layer i
+    #          specifies the external input to each of its units.
+    #          An empty matrix denotes no input to that layer.
+    # clamp_inp = a binary flag. 1 -> layers are clamped to their
+    #             input value. 0 -> inputs summed to netins.
+    
+    ## Testing the arguments and reshaping the input
+    # if ~iscell(inputs)
+    #     error('First argument to cycle function should be an inputs cell');
+    # end
+    # if length(inputs) ~= net.n_lays
+    #     error('Number of layers inconsistent with number of inputs in network cycle');
+    # end
+    for inp in 1:net.n_lays  # reshaping inputs into column vectors
+        if any(inputs[inp] .> 0.0) #if ~isempty(inputs[inp])
+            inputs[inp] = reshape(inputs[inp], net.layers[inp].N, 1);
+        end
+    end
+    
+    ## First we set all clamped layers to their input values
+    clamped_lays = zeros(1, net.n_lays);
+    if clamp_inp
+        for lay in 1:net.n_lays
+            if any(inputs[lay] .> 0.0) # if ~isempty(inputs[lay])
+                clamped_cycle(net.layers[lay], inputs[lay]);
+                clamped_lays[lay] = 1
+            end
+        end
+    end
+    
+    ## We make a copy of the scaled activity for all layers
+    # scaled_acts = zeros(Float64, 1, net.n_lays)
+    scaled_acts_array = Array{Vector{Float64}}(undef, net.n_lays)
+    for lay in 1:net.n_lays
+        scaled_acts_array[lay] = scaled_acts(net.layers[lay])
+    end
+    
+    ## For each unclamped layer, we put all its scaled inputs in one
+    #  column vector, and call its cycle function with that vector
+    for recv in 1:net.n_lays
+        if all(clamped_lays[recv] .== 0.0) # if the layer is not clamped
+            # for each 'recv' layer we find its input vector
+            long_input = zeros(1, net.n_units); # preallocating for speed
+            n_inps = 0;  # will have the # of input units to 'recv'
+            n_sends = 0; # will have the # of layers sending to 'recv'
+            conns = (net.connections[recv, :] .> 0.0)
+            wt_scale_rel = net.connections[recv, conns];
+            for send in 1:net.n_lays
+                if net.connections[recv, send] > 0
+                    n_sends = n_sends + 1;
+                    long_input[(1 + n_inps):(n_inps + net.layers[send].N)] = wt_scale_rel[n_sends] .* scaled_acts_array[send]
+                    n_inps = n_inps + net.layers[send].N;
+                end
+            end
+            # now we call 'cycle'
+            cycle(net.layers[recv], long_input[1:n_inps], inputs[recv]);                   
+        end
+    end
+    
+end # end of 'cycle' function
 
 ######################################################################################################
 #  Testing
