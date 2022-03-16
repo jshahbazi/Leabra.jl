@@ -37,7 +37,8 @@ function expand(x, dim, copies)
 end
 
 ######################################################################################################
-
+# Unit Functions
+#
 mutable struct Unit 
     act::Float64        # = 0.2           # "firing rate" of the unit
     avg_ss::Float64     # = act           # super short-term average of act
@@ -160,6 +161,9 @@ function reset(u::Unit)
     u.spike = 0.0            
 end
 
+######################################################################################################
+# NXX1 Functions
+#
 
 function XX1(x::Float64)
     return x / (x + 1)
@@ -205,7 +209,7 @@ function XX1GainCor(x::Float64, xp::NXX1Parameters = nxx1p)
     if gainCorFact < 0
         return XX1(xp.Gain * x)
     end
-    newGain = xp.Gain * (1 - xp.GainCor*gainCorFact)
+    newGain = xp.Gain * (1 - xp.GainCor * gainCorFact)
     return XX1(newGain * x)
 end  
 
@@ -214,7 +218,7 @@ function NoisyXX1(x::Float64, xp::NXX1Parameters = nxx1p)
 		return xp.SigMultEff / (1 + exp(-(x * xp.SigGainNVar)))
 	elseif x < xp.InterpRange
 		interp = 1 - ((xp.InterpRange - x) / xp.InterpRange)
-		return xp.SigValAt0 + interp*xp.InterpVal
+		return xp.SigValAt0 + interp * xp.InterpVal
 	else
 		return XX1GainCor(x)
     end
@@ -225,25 +229,197 @@ function XX1GainCorGain(x::Float64, gain::Float64, xp::NXX1Parameters = nxx1p)
 	if gainCorFact < 0
 		return XX1(gain * x)
     end
-	newGain = gain * (1 - xp.GainCor*gainCorFact)
+	newGain = gain * (1 - xp.GainCor * gainCorFact)
 	return XX1(newGain * x)
 end
 
 function NoisyXX1Gain(x::Float64, gain::Float64, xp::NXX1Parameters = nxx1p)
 	if x < xp.InterpRange
-		sigMultEffArg = xp.SigMult * (gain*xp.NVar ^ xp.SigMultPow)
+		sigMultEffArg = xp.SigMult * (gain * xp.NVar ^ xp.SigMultPow)
 		sigValAt0Arg = 0.5 * sigMultEffArg
 
 		if x < 0 # sigmoidal for < 0
 			return sigMultEffArg / (1 + exp(-(x * xp.SigGainNVar)))
 		else # else x < interp_range
 			interp = 1 - ((xp.InterpRange - x) / xp.InterpRange)
-			return sigValAt0Arg + interp*xp.InterpVal
+			return sigValAt0Arg + interp * xp.InterpVal
         end
 	else
 		return xp.XX1GainCorGain(x, gain)
     end
 end
+
+function nxx1(points, xp::NXX1Parameters = nxx1p)
+    results = Array{Float64}(undef, length(points))
+    for (index,value) in enumerate(points)
+        results[index] = NoisyXX1(value)
+    end
+    return results
+end
+
+######################################################################################################
+#  Layer Functions
+#
+
+mutable struct Layer 
+    units::Array{Unit}
+    pct_act_scale::Float64
+    acts_p_avg::Float64
+    netin_avg::Float64
+    wt::Array{Float64, 2}
+    ce_wt::Array{Float64, 2}
+    N::Int64
+    fbi::Float64
+
+    const ff::Float64           # = 1.0
+    const ff0::Float64          # = 0.1
+    const fb::Float64           # = 0.5
+    const fb_dt::Float64        # = 1/1.4 # time step for fb inhibition (fb_tau=1.4)
+    const gi::Float64           # = 2.0
+    const avg_act_dt::Float64   # = 0.01
+end
+
+function layer(dims::Tuple{Int64, Int64} = (1,1))
+    N = dims[1]*dims[2]
+    # lay.units = unit.empty;  # so I can make the assignment below
+    # lay.units(lay.N,1) = unit; # creating all units
+    # # notice how the unit array is 1-D. The 2-D structure of the
+    # # layer doesn't have meaning in this part of the code 
+    
+    units = [Unit() for i in 1:N]
+    
+    acts_avg = 0.2 # should be the average but who knows
+    avg_act_n =  1.0 # should be the avg
+    pct_act_scale = 1/(avg_act_n + 2);
+    fb = 0.5
+
+    lay = Layer(units, 
+                pct_act_scale, 
+                acts_avg, 
+                0,
+                zeros(Float64, (1,1)),
+                zeros(Float64, (1,1)),
+                N,
+                fb * acts_avg,
+                1.0, 0.1, fb, 1/1.4, 2.0, 0.01
+    )
+
+    return lay
+end
+
+function acts_avg(lay::Layer)
+    # get the value of acts_avg, the mean of unit activities
+    return mean(activities(lay));
+end
+
+function activities(lay::Layer)
+    # ## returns a vector with the activities of all units
+    # acts = Array{Float64, 1}(undef, lay.N)
+    acts = zeros(Float64, lay.N)
+    for (index,unit) in enumerate(lay.units)
+        acts[index] = unit.act
+    end
+    return transpose(acts)
+end
+
+function scaled_acts(lay::Layer)
+    # ## returns a vector with the scaled activities of all units
+    acts = Array{Float64, 1}(undef, lay.N)
+    for (index,unit) in enumerate(lay.units)
+        acts[index] = unit.act
+    end
+    return lay.pct_act_scale .* acts #collect(transpose(acts))
+end
+
+function cycle(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64})
+    ## this function performs one Leabra cycle for the layer
+    #raw_inputs = An Ix1 matrix, where I is the total number of inputs
+    #             from all layers. Each input has already been scaled
+    #             by the pct_act_scale of its layer of origin and by
+    #             the wt_scale_rel factor.
+    #ext_inputs = An Nx1 matrix denoting inputs that don't come
+    #             from another layer, where N is the number of
+    #             units in this layer. An empty matrix indicates
+    #             that there are no external inputs.
+     
+    ## obtaining the net inputs            
+    netins = lay.ce_wt * raw_inputs;  # you use contrast-enhanced weights
+    if any(ext_inputs) .> 0.0
+        netins = netins .+ ext_inputs;
+    end
+
+    ## obtaining inhibition
+    lay.netin_avg = mean(netins); 
+    ffi = lay.ff * max(lay.netin_avg - lay.ff0, 0);
+    lay.fbi = lay.fbi + lay.fb_dt * (lay.fb * acts_avg(lay) - lay.fbi);
+    gc_i = lay.gi * (ffi + lay.fbi); 
+    
+    ## calling the cycle method for all units
+    # function cycle(u::Unit, net_raw::Float64, gc_i::Float64)
+    for i in 1:lay.N  # a parfor here?
+        cycle(lay.units[i], netins[i], gc_i);
+    end
+    
+end
+        
+function averages(lay::Layer)
+    # Returns the s,m,l averages in the layer as vectors.
+    # Notice that the ss average is not returned, and avg_l is not
+    # updated before being returned.
+
+    avg_s = [unit.avg_s for unit in lay.units]
+    avg_m = [unit.avg_m for unit in lay.units]
+    avg_l = [unit.avg_l for unit in lay.units]
+    return (avg_s, avg_m, avg_l)
+end
+
+function rel_avg_l(lay::Layer)
+    # Returns the relative values of avg_l. These are the dependent
+    # variables rel_avg_l in all units used in latest XCAL
+    return [rel_avg_l(unit) for unit in lay.units]
+
+end
+
+function updt_avg_l(lay::Layer)
+    # updates the long-term average (avg_l) of all the units in the
+    # layer. Usually done after a plus phase.
+    for i in 1:lay.N 
+        updt_avg_l(lay.units[i])
+    end            
+end
+
+function updt_long_avgs(lay::Layer)
+    # updates the acts_p_avg and pct_act_scale variables.
+    # These variables update at the end of plus phases instead of
+    # cycle by cycle. 
+    # This version assumes full connectivity when updating
+    # pct_act_scale. If partial connectivity were to be used, this
+    # should have the calculation in WtScaleSpec::SLayActScale, in
+    # LeabraConSpec.cpp 
+    lay.acts_p_avg = lay.acts_p_avg + lay.avg_act_dt * (acts_avg(lay) - lay.acts_p_avg);
+                 
+    r_avg_act_n = max(round(lay.acts_p_avg * lay.N), 1);
+    lay.pct_act_scale = 1/(r_avg_act_n + 2);  
+end
+
+function reset(lay::Layer)
+    # This function sets the activity of all units to random values, 
+    # and all other dynamic variables are also set accordingly.            
+    # Used to begin trials from a random stationary point.
+    # The activity values may also be set to zero (see unit.reset)
+    for i in 1:lay.N 
+        reset(lay.units[i])
+    end         
+end
+
+######################################################################################################
+#  Network Functions
+#
+
+
+######################################################################################################
+#  Testing
+#
 
 function test_nxx1(xp::NXX1Parameters = nxx1p)
     difTol = 1.0e-7
@@ -261,17 +437,15 @@ function test_nxx1(xp::NXX1Parameters = nxx1p)
     end
 end
 
-function nxx1(points, xp::NXX1Parameters = nxx1p)
-    results = Array{Float64}(undef, length(points))
-    for (index,value) in enumerate(points)
-        results[index] = NoisyXX1(value)
-    end
-    return results
-end
-
-
-
-
-
+# test_nxx1()
+# mylayer = layer((1,1))
+# activities(mylayer)
+# acts_avg(mylayer)
+# scaled_acts(mylayer)
+# averages(mylayer)
+# rel_avg_l(mylayer)
+# updt_avg_l(mylayer)
+# updt_long_avgs(mylayer)
+# reset(mylayer)
 
 end # module Leabra
