@@ -131,6 +131,20 @@ function cycle(u::Unit, net_raw::Float64, gc_i::Float64)
     u.avg_m = u.avg_m + u.integ_dt * u.m_dt * (u.avg_s - u.avg_m) 
 end
 
+function clamped_cycle(u::Unit, input)
+    # This function performs one cycle of the unit when its activty
+    # is clamped to an input value. The activity is set to be equal
+    # to the input, and all the averages are updated accordingly.
+    
+    ## Clamping the activty to the input
+    u.act = input;
+    
+    ## updating averages
+    u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act - u.avg_ss);
+    u.avg_s = u.avg_s + u.integ_dt * u.s_dt * (u.avg_ss - u.avg_s);
+    u.avg_m = u.avg_m + u.integ_dt * u.m_dt * (u.avg_s - u.avg_m);
+end
+
 
 function updt_avg_l(u::Unit)
     # This fuction updates the long-term average 'avg_l' 
@@ -359,7 +373,17 @@ function cycle(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64
     for i in 1:lay.N  # a parfor here?
         cycle(lay.units[i], netins[i], gc_i);
     end
-    
+end
+
+function clamped_cycle(lay::Layer, input::Array{Float64})
+    # sets all unit activities equal to the input and updates all
+    # the variables as in the cycle function.
+    # input = vector specifying the activities of all units
+    for i = 1:lay.N  # parfor ?
+        # function clamped_cycle(u::Unit, input)
+        clamped_cycle(lay.units[i], input[i]);
+    end
+    lay.fbi = lay.fb * acts_avg(lay)
 end
         
 function averages(lay::Layer)
