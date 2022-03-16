@@ -16,6 +16,7 @@ import Base.Threads.@spawn
 ######################################################################################################
 # Utility Functions
 #
+
 """
 Prints variables and arrays in a more structured form that's easier to read
 """
@@ -39,6 +40,7 @@ end
 ######################################################################################################
 # Unit Functions
 #
+
 mutable struct Unit 
     act::Float64        # = 0.2           # "firing rate" of the unit
     avg_ss::Float64     # = act           # super short-term average of act
@@ -457,9 +459,6 @@ mutable struct Network
     const gain::Float64             # = 6.0;   # gain in the SIG function for contrast enhancement
 end
 
-
-
-
 function network(dim_layers, connections, w0)
     # constructor to the network class.
     # dim_layers = 1-D cell array. dim_layers{i} is a vector [j,k], 
@@ -552,8 +551,6 @@ function network(dim_layers, connections, w0)
 
     return net
 end
-
-
 
 function XCAL_learn(net::Network)
     # XCAL_learn() applies the XCAL learning equations in order to
@@ -649,7 +646,6 @@ function XCAL_learn(net::Network)
         net.layers[lay].ce_wt = 1 ./ (1 .+ (net.off .* (1 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
     end
 end # end XCAL_learn method 
-
 
 function updt_long_avgs(net::Network)
     # updates the acts_p_avg and pct_act_scale variables for all layers. 
@@ -773,8 +769,6 @@ function get_weights(netnet::Network)
     end
     return w
 end
-
-
 
 function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     # this function calls the cycle method for all layers.
@@ -974,11 +968,13 @@ function test_network()
             # Only the cosine error is used here
             errors[epoch, pat] = 1 - sum(outs .* transpose(patterns[pat, 2][:])) / ( norm(outs) * norm(transpose(patterns[pat, 2][:])) );                    
         end
+
+        println("Epoch $epoch finished")
     end
 
     mean_errs = mean(errors, dims=2);
     println("Errors: $mean_errs")
-    @assert all(0.0 .< mean_errs) &&  all(mean_errs .< 1.0) "Errors are out of range"
+    @assert all(0.0 .< mean_errs) && all(mean_errs .< 1.0) "Errors are out of range"
 end
 
 end # module Leabra
