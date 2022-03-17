@@ -295,6 +295,23 @@ mutable struct Layer
     const avg_act_dt::Float64   # = 0.01
 end
 
+Base.show(io::IO, lay::Layer) = print(io, 
+                                      "Layer - ", length(lay.units), " Units\n",
+                                      "pct_act_scale: ",lay.pct_act_scale,"\n",
+                                      "acts_p_avg: ",   lay.acts_p_avg,"\n",
+                                      "netin_avg: ",    lay.netin_avg,"\n",
+                                      "wt: ",           lay.wt,"\n",
+                                      "ce_wt: ",        lay.ce_wt,"\n",
+                                      "N: ",            lay.N,"\n",
+                                      "fbi: ",          lay.fbi,"\n",
+                                      "ff: ",           lay.ff,"\n",
+                                      "ff0: ",          lay.ff0,"\n",
+                                      "fb: ",           lay.fb,"\n",
+                                      "fb_dt: ",        lay.fb_dt,"\n",
+                                      "gi: ",           lay.gi,"\n",
+                                      "avg_act_dt: ",   lay.avg_act_dt,"\n",
+                                     )
+
 function layer(dims::Tuple{Int64, Int64} = (1,1))
     N = dims[1]*dims[2]
     # lay.units = unit.empty;  # so I can make the assignment below
@@ -832,18 +849,6 @@ end # end of 'cycle' function
 ######################################################################################################
 #  Testing
 #
-
-function test_layer()
-    mylayer = layer((1,1))
-    activities(mylayer)
-    acts_avg(mylayer)
-    scaled_acts(mylayer)
-    averages(mylayer)
-    rel_avg_l(mylayer)
-    updt_avg_l(mylayer)
-    updt_long_avgs(mylayer)
-    reset(mylayer)
-end
 
 function test_network()
     # # 1.1) Set the dimensions of the layers
