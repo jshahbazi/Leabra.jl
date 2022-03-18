@@ -77,6 +77,7 @@ include("../src/Leabra.jl")
         net = Leabra.network(dim_lays, connections, w0)
 
         n_inputs = 5
+        patterns = Array{Array{Float64}, 2}(undef, (n_inputs,2))
         for i in 1:n_inputs # outputs are the same as inputs (an autoassociator)
             patterns[i,1] = rand(Binomial(1,0.5),(n_inputs,n_inputs))
             patterns[i,2] = patterns[i,1];
