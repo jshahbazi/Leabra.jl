@@ -902,16 +902,9 @@ function test_network()
 
     n_inputs = 5;  # number of input-output patterns to associate
     patterns = Array{Matrix{Float64}, 2}(undef, (n_inputs,2)) # patterns{i,1} is the i-th input pattern, and 
-                                                            # patterns{i,2} is the i-th output pattern.
-    # This will assume that layers 1 and 3 are input and output respectively.
-    # Pattern values are binary, either 0.01 or 0.99
-    patterns[1,1] = repeat([0 0 1 0 0],5,1);   # vertical line
-    patterns[2,1] = [1 1 1 1 1;zeros(4,5)];   # horizontal line
-    patterns[3,1] = [0 0 0 0 1;0 0 0 1 0;0 0 1 0 0;0 1 0 0 0; 1 0 0 0 0]; # diagonal 1
-    patterns[4,1] = reverse(patterns[3,1], dims=2) #patterns[3,1][[5 4 3 2 1],:]   # diagonal 2
-    patterns[5,1] =  1.0 .* (!=(0.0).(patterns[3,1]) .|| !=(0.0).(patterns[4,1]))   # two diagonals
+                                                              # patterns{i,2} is the i-th output pattern.
     for i in 1:n_inputs # outputs are the same as inputs (an autoassociator)
-        patterns[i,1] = 0.01 .+ 0.98 .* patterns[i,1];
+        patterns[i,1] = rand(Binomial(1,0.5),(n_inputs,n_inputs))
         patterns[i,2] = patterns[i,1];
     end
 
