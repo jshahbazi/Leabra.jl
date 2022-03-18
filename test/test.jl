@@ -76,7 +76,7 @@ include("../src/Leabra.jl")
         end
         net = Leabra.network(dim_lays, connections, w0)
         n_inputs = 5
-        patterns = Array{Matrix{Float64}, 2}(undef, (n_inputs,2))
+        patterns = Array{Array{Float64}, 2}(undef, (n_inputs,2))
         patterns[1,1] = repeat([0 0 1 0 0],5,1)
         patterns[2,1] = [1 1 1 1 1;zeros(4,5)]
         patterns[3,1] = [0 0 0 0 1;0 0 0 1 0;0 0 1 0 0;0 1 0 0 0; 1 0 0 0 0]
