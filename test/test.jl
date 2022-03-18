@@ -75,17 +75,13 @@ include("../src/Leabra.jl")
             end
         end
         net = Leabra.network(dim_lays, connections, w0)
+
         n_inputs = 5
-        patterns = Array{Array{Float64}, 2}(undef, (n_inputs,2))
-        patterns[1,1] = repeat([0 0 1 0 0],5,1)
-        patterns[2,1] = [1 1 1 1 1;zeros(4,5)]
-        patterns[3,1] = [0 0 0 0 1;0 0 0 1 0;0 0 1 0 0;0 1 0 0 0; 1 0 0 0 0]
-        patterns[4,1] = reverse(patterns[3,1], dims=2)
-        patterns[5,1] =  1.0 .* (!=(0.0).(patterns[3,1]) .|| !=(0.0).(patterns[4,1]))
-        for i in 1:n_inputs
-            patterns[i,1] = 0.01 .+ 0.98 .* patterns[i,1]
-            patterns[i,2] = patterns[i,1]
+        for i in 1:n_inputs # outputs are the same as inputs (an autoassociator)
+            patterns[i,1] = rand(Binomial(1,0.5),(n_inputs,n_inputs))
+            patterns[i,2] = patterns[i,1];
         end
+
         n_epochs = 10
         n_trials = n_inputs
         n_minus = 50  # number of minus cycles per trial
