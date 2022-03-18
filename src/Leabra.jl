@@ -13,6 +13,7 @@ using Statistics
 
 import Base.Threads.@spawn
 
+
 ######################################################################################################
 # Utility Functions
 #
@@ -964,6 +965,13 @@ function test_network()
     mean_errs = mean(errors, dims=2);
     println("Mean Errors: $mean_errs")
     @assert all(0.0 .< mean_errs) && all(mean_errs .< 1.0) "Mean Errors are out of range"
+end
+
+# export all
+for n in names(@__MODULE__; all=true)
+    if Base.isidentifier(n) && n ∉ (Symbol(@__MODULE__), :eval, :include)
+        @eval export $n
+    end
 end
 
 end # module Leabra
