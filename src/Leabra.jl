@@ -48,17 +48,17 @@ mutable struct Unit
     avg_s::Float64      # = act           # short-term average of act
     avg_m::Float64      # = act           # medium-term average of act
     avg_l::Float64      # = 0.1           # long-term average of act    
-    net::Float64        # = 0.0           # net input. Asymptotically approaches net_raw (see cycle).
+    g_e::Float64        # = 0.0           # net input. Asymptotically approaches g_e_raw (see cycle).
     v_m::Float64        # = 0.3           # membrane potential
     vm_eq::Float64      # = 0.3           # a version of v_m that doesn't reset with spikes
     adapt::Float64      # = 0.0           # adaptation, as in the AdEx model 
     spike::Bool         # = false         # a flag that indicates spiking threshold was crossed
 
     # constants
-    const net_dt::Float64     # = 1/1.4         # time step constant for update of 'net'
+    const g_e_dt::Float64     # = 1/1.4         # time step constant for update of 'g_e'
     const integ_dt::Float64   # = 1.0;    # time step constant for integration of cycle dynamics
     const vm_dt::Float64      # = 1/3.3;  # time step constant for membrane potential
-    const l_dn_dt::Float64    # = 1/2.5;  # time step constant for avg_l decrease
+    const l_dn_dt::Float64    # = 1/2.5;  # time step constant for avg_l decrease   # TODO never used
     const adapt_dt::Float64   # = 1/144;  # time step constant for adaptation
     const ss_dt::Float64      # = 0.5;    # time step for super-short average
     const s_dt::Float64       # = 0.5;    # time step for short average
@@ -66,16 +66,17 @@ mutable struct Unit
     const avg_l_dt::Float64   # = 0.1;    # time step for long-term average
     const avg_l_max::Float64  # = 1.5;          # max value of avg_l
     const avg_l_min::Float64  # = 0.1;          # min value of avg_l
-    const e_rev_e::Float64    # = 1.0;          # excitatory reversal potential
-    const e_rev_i::Float64    # = 0.25;         # inhibitory reversal potential
-    const e_rev_l::Float64    # = 0.3;          # leak reversal potential
-    const gc_l::Float64       # = 0.1;          # leak conductance
+    # TODO it is very strange that v_rev_e is set to 1, so that v_m (at least i think) cannot grow larger than 1, but spike_thr is 1.2, so there will never be a spike right; don't know
+    const v_rev_e::Float64    # = 1.0;          # excitatory reversal potential
+    const v_rev_i::Float64    # = 0.25;         # inhibitory reversal potential
+    const v_rev_l::Float64    # = 0.3;          # leak reversal potential
+    const g_l::Float64       # = 0.1;          # leak conductance
     const thr::Float64        # = 0.5;          # normalized "rate threshold"
-    const spk_thr::Float64    # = 1.2;          # normalized spike threshold
+    const spk_thr::Float64    # = 1.2;          # normalized spike threshold  # TODO why is spk_thr 1.2; this is not a v value of -50mV...
     const vm_r::Float64       # = 0.3;          # reset membrane potential after spike
     const vm_gain::Float64    # = 0.04;         # gain that voltage produces on adaptation
     const spike_gain::Float64 # = 0.00805;      # effect of spikes on adaptation
-    const l_up_inc::Float64   # = 0.2;          # increase in avg_l if avg_m has been 'large'   
+    const l_up_inc::Float64   # = 0.2;          # increase in avg_l if avg_m has been 'large'   # TODO never used  # maybe: (increase in avg_l if avg_m has been "large")
     
     function Unit()
         return new( 0.2, 0.2, 0.2, 0.2, 0.1, 0.0, 0.3, 0.3, 0.0, false,
@@ -87,46 +88,131 @@ function rel_avg_l(u::Unit)::Float64
     return (u.avg_l - u.avg_l_min)/(u.avg_l_max - u.avg_l_min)
 end
 
+# function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
+#     # Does one Leabra cycle. Called by the layer cycle method.
+#     # g_e_raw = instantaneous, scaled, received input
+#     # g_i = fffb inhibition
+    
+#     ## updating net input
+#     u.g_e = u.g_e + u.integ_dt * u.g_e_dt * (g_e_raw - u.g_e)
+    
+#     ## Finding membrane potential
+#     i_net = u.g_e*(u.v_rev_e - u.v_m) + u.g_l*(u.v_rev_l - u.v_m) + g_i*(u.v_rev_i - u.v_m)
+#     # almost half-step method for updating v_m (adapt doesn't half step)
+#     v_m_h = u.v_m + 0.5*u.integ_dt*u.vm_dt*(i_net )
+#     i_net_h = u.g_e*(u.v_rev_e - v_m_h) + u.g_l*(u.v_rev_l - v_m_h) + g_i*(u.v_rev_i - v_m_h)
+#     u.v_m = u.v_m + u.integ_dt*u.vm_dt*(i_net_h )
+#     u.vm_eq = u.vm_eq + u.integ_dt*u.vm_dt*(i_net_h )
+    
+#     ## Finding activation
+#     # finding threshold excitatory conductance
+#     # geThr = (Gi * (Erev.I -  Thr)   + Gbar.L * (Erev.L - Thr) / (Thr - Erev.E)
+#     g_e_thr = (g_i*(u.v_rev_i-u.thr) + u.g_l*(u.v_rev_l-u.thr) ) / (u.thr - u.v_rev_e)
+#     # finding whether there's an action potential
+#     if u.v_m > u.spk_thr
+#         u.spike = true
+#         u.v_m = u.vm_r
+#     else
+#         u.spike = false
+#     end
+#     # finding instantaneous rate due to input
 
-function cycle(u::Unit, net_raw::Float64, gc_i::Float64)
+#     ############################
+#     # CALCULATE ACTIVITY
+#     ############################
+#     # if Act < XX1Params.VmActThr && Vm <= X11Params.Thr: 
+#     #   nwAct = NoisyXX1(Vm - Thr)
+#     # else
+#     #   nwAct = NoisyXX1(Ge * Gbar.E - geThr)
+#     if u.vm_eq <= u.thr
+#         new_act = nxx1(u.vm_eq - u.thr)[1]
+#     else
+#         new_act = nxx1(u.g_e - g_e_thr)[1]
+#     end
+#     # Act += (1 / DTParams.VmTau) * (nwAct - Act)
+#     # vm_dt is 1/vm_tau
+#     u.act = u.act + u.integ_dt * u.vm_dt * (new_act - u.act)
+
+
+#     ## Updating adaptation
+#     # u.adapt = u.adapt + u.integ_dt*(u.adapt_dt*(u.vm_gain*(u.v_m - u.v_rev_l)  - u.adapt) + u.spike*u.spike_gain)
+          
+#     ## updating averages
+#     u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act - u.avg_ss)
+#     u.avg_s = u.avg_s + u.integ_dt * u.s_dt * (u.avg_ss - u.avg_s)
+#     u.avg_m = u.avg_m + u.integ_dt * u.m_dt * (u.avg_s - u.avg_m) 
+# end
+
+function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
     # Does one Leabra cycle. Called by the layer cycle method.
-    # net_raw = instantaneous, scaled, received input
-    # gc_i = fffb inhibition
+    # g_e_raw = instantaneous, scaled, received input
+    # g_i = fffb inhibition
     
     ## updating net input
-    u.net = u.net + u.integ_dt * u.net_dt * (net_raw - u.net)
+    # Ge +=      DtParams.Integ * (1/ DtParams.GTau) * (GeRaw - Ge)
+    u.g_e = u.g_e + u.integ_dt * u.g_e_dt * (g_e_raw - u.g_e)
     
     ## Finding membrane potential
-    I_net = u.net*(u.e_rev_e - u.v_m) + u.gc_l*(u.e_rev_l - u.v_m) + gc_i*(u.e_rev_i - u.v_m)
+    #Inet = Ge *    (Erev.E  - Vm)    + Gbar.L * (Erev.L - Vm)    +    Gi * (Erev.I - Vm) + Noise
+    # i_net = u.g_e*(u.v_rev_e - u.v_m) + u.g_l*(u.v_rev_l - u.v_m) + g_i*(u.v_rev_i - u.v_m)
+    i_e = u.g_e * (u.v_rev_e - u.v_m)
+    i_i =   g_i * (u.v_rev_i - u.v_m)
+    i_l = u.g_l * (u.v_rev_l - u.v_m)
+    i_net = i_e + i_i + i_l
+    
     # almost half-step method for updating v_m (adapt doesn't half step)
-    v_m_h = u.v_m + 0.5*u.integ_dt*u.vm_dt*(I_net - u.adapt)
-    I_net_h = u.net*(u.e_rev_e - v_m_h) + u.gc_l*(u.e_rev_l - v_m_h) + gc_i*(u.e_rev_i - v_m_h)
-    u.v_m = u.v_m + u.integ_dt*u.vm_dt*(I_net_h - u.adapt)
-    u.vm_eq = u.vm_eq + u.integ_dt*u.vm_dt*(I_net_h - u.adapt)
+    v_m_h = u.v_m + 0.5 * u.integ_dt * u.vm_dt * (i_net - u.adapt)
+    i_e_h = u.g_e * (u.v_rev_e - v_m_h)
+    i_i_h =   g_i * (u.v_rev_i - v_m_h)
+    i_l_h = u.g_l * (u.v_rev_l - v_m_h)
+    i_net_h = i_e_h + i_i_h + i_l_h
+    # i_net_h = u.g_e*(u.v_rev_e - v_m_h) + u.g_l*(u.v_rev_l - v_m_h) + g_i*(u.v_rev_i - v_m_h)
+    
+    u.v_m   = u.v_m   + u.integ_dt * u.vm_dt * (i_net_h - u.adapt)
+
+    # new rate coded version of i_net
+    i_e_r = u.g_e * (u.v_rev_e - u.vm_eq)
+    i_i_r =   g_i * (u.v_rev_i - u.vm_eq)
+    i_l_r = u.g_l * (u.v_rev_l - u.vm_eq)
+    i_net_r = i_e_r + i_i_r + i_l_r 
+    
+    u.vm_eq = u.vm_eq + u.integ_dt * u.vm_dt * (i_net_r - u.adapt)    
     
     ## Finding activation
     # finding threshold excitatory conductance
-    g_e_thr = (gc_i*(u.e_rev_i-u.thr) + u.gc_l*(u.e_rev_l-u.thr) - u.adapt) / (u.thr - u.e_rev_e)
+    # geThr = (Gi * (Erev.I -  Thr)   + Gbar.L * (Erev.L - Thr) / (Thr - Erev.E)
+    g_e_thr = (g_i * (u.v_rev_i - u.thr) + u.g_l * (u.v_rev_l - u.thr) - u.adapt) / (u.thr - u.v_rev_e)
+    
     # finding whether there's an action potential
     if u.v_m > u.spk_thr
         u.spike = true
         u.v_m = u.vm_r
+        i_net = 0.0
     else
         u.spike = false
     end
-    # finding instantaneous rate due to input
 
+
+    # finding instantaneous rate due to input
+    # connects to leabra/act.go line 207
+    # if Act < XX1Params.VmActThr && Vm <= X11Params.Thr: 
+    #   nwAct = NoisyXX1(Vm - Thr)
+    # else
+    #   nwAct = NoisyXX1(Ge * Gbar.E - geThr)
     if u.vm_eq <= u.thr
         new_act = nxx1(u.vm_eq - u.thr)[1]
     else
-        new_act = nxx1(u.net - g_e_thr)[1]
+        new_act = nxx1(u.g_e - g_e_thr)[1]
     end
 
     # update activity
+    # Act += (1 / DTParams.VmTau) * (nwAct - Act)
+    # vm_dt is 1/vm_tau
     u.act = u.act + u.integ_dt * u.vm_dt * (new_act - u.act)
 
-    ## Updating adaptation
-    u.adapt = u.adapt + u.integ_dt*(u.adapt_dt*(u.vm_gain*(u.v_m - u.e_rev_l)  - u.adapt) + u.spike*u.spike_gain)
+
+    ## Updating adaptation current
+    u.adapt = u.adapt + u.integ_dt * (u.adapt_dt * (u.vm_gain * (u.v_m - u.v_rev_l)  - u.adapt) + u.spike * u.spike_gain)
           
     ## updating averages
     u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act - u.avg_ss)
@@ -171,7 +257,7 @@ function reset(u::Unit)
     u.avg_s = u.act
     u.avg_m = u.act
     u.avg_l = u.act
-    u.net = 0.0
+    u.g_e = 0.0
     u.v_m = 0.3
     u.vm_eq = 0.3
     u.adapt = 0.0            
@@ -376,22 +462,23 @@ function cycle(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64
     #             units in this layer. An empty matrix indicates
     #             that there are no external inputs.
      
-    ## obtaining the net inputs            
-    netins = lay.ce_wt * raw_inputs;  # you use contrast-enhanced weights
+    ## obtaining the net inputs    
+    # GeRaw += Sum_(recv) Prjn.GScale * Send.Act * Wt        
+    netins = lay.ce_wt * raw_inputs  # you use contrast-enhanced weights
     if any(ext_inputs) .> 0.0
-        netins = netins .+ ext_inputs;
+        netins = netins .+ ext_inputs
     end
 
     ## obtaining inhibition
-    lay.netin_avg = mean(netins); 
-    ffi = lay.ff * max(lay.netin_avg - lay.ff0, 0);
-    lay.fbi = lay.fbi + lay.fb_dt * (lay.fb * acts_avg(lay) - lay.fbi);
-    gc_i = lay.gi * (ffi + lay.fbi); 
+    lay.netin_avg = mean(netins)
+    ffi = lay.ff * max(lay.netin_avg - lay.ff0, 0)
+    lay.fbi = lay.fbi + lay.fb_dt * (lay.fb * acts_avg(lay) - lay.fbi)
+    g_i = lay.gi * (ffi + lay.fbi)
     
     ## calling the cycle method for all units
-    # function cycle(u::Unit, net_raw::Float64, gc_i::Float64)
-    for i in 1:lay.N  # a parfor here?
-        cycle(lay.units[i], netins[i], gc_i);
+    # function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
+    for i in 1:lay.N
+        cycle(lay.units[i], netins[i], g_i)
     end
 end
 
@@ -401,7 +488,7 @@ function clamped_cycle(lay::Layer, input::Array{Float64})
     # input = vector specifying the activities of all units
     for i = 1:lay.N  # parfor ?
         # function clamped_cycle(u::Unit, input)
-        clamped_cycle(lay.units[i], input[i]);
+        clamped_cycle(lay.units[i], input[i])
     end
     lay.fbi = lay.fb * acts_avg(lay)
 end
@@ -467,6 +554,7 @@ mutable struct Network
     n_units::Int64
     lrate::Float64
     
+    # TODO add type of layer for avg_l_lrn, it is 0.0004 on default, but 0 for output layers (they do not need self-organized learning).
     const avg_l_lrn_max::Float64    # = 0.01; # max amount of "BCM" learning in XCAL
     const avg_l_lrn_min::Float64    # = 0.0;  # min amount of "BCM" learning in XCAL
     const m_in_s::Float64           # = 0.1; # proportion of medium to short term avgs. in XCAL
@@ -564,6 +652,7 @@ function network(dim_layers, connections, w0)
     
     # set the contrast-enhanced version of the weights
     for lay in 1:n_lay
+        # TODO check book version of contrast-enhanced weights: 1 / (1 + (self$weights) / (off * (1 - self$weights)) ^ -gain)
         net.layers[lay].ce_wt = 1 ./ (1 .+ (net.off * (1 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
     end
 
@@ -651,6 +740,8 @@ function XCAL_learn(net::Network)
         end
         if hit #!isempty(DW)
             # Here's the weight bounding part, as in the CCN book
+            # TODO original: idxp = net.layers[rcv].wt .> 0
+            # maybe correct: idxp = net.layers[rcv].dwt .> 0 ???
             idxp = net.layers[rcv].wt .> 0
             idxn = .!idxp # maps ! function onto the BitArray
             
