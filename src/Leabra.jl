@@ -334,18 +334,18 @@ mutable struct Layer
     units::Array{Unit}
     pct_act_scale::Float64
     acts_p_avg::Float64
-    netin_avg::Float64
+    ge_avg::Float64
+    ge_max::Float64
+    maxvsage::Float64  # def:"0,0.5,1" desc:"what proportion of the maximum vs. average netinput to use in the feedforward inhibition computation -- 0 = all average, 1 = all max, and values in between = proportional mix between average and max (ff_netin = avg + ff_max_vs_avg * (max - avg)) -- including more max can be beneficial especially in situations where the average can vary significantly but the activity should not -- max is more robust in many situations but less flexible and sensitive to the overall distribution -- max is better for cases more closely approximating single or strictly fixed winner-take-all behavior -- 0.5 is a good compromise in many cases and generally requires a reduction of .1 or slightly more (up to .3-.5) from the gi value for 0"`
     wt::Array{Float64, 2}
     ce_wt::Array{Float64, 2}
     N::Int64
     fbi::Float64
 
     const fb_dt::Float64        # = 1/1.4 # Integration constant for feedback inhibition (fb_tau=1.4)
-    
     const ff::Float64           # = 1.0   # feedforward scaling of inhibition
     const ff0::Float64          # = 0.1   # threshold
-    const fb::Float64           # = 0.5   # feedback scaling of inhibition
-    
+    const fb::Float64           # = 0.5   # feedback scaling of inhibition    
     const gi::Float64           # = 2.0   # inhibition multiplier
     const avg_act_dt::Float64   # = 0.01
 end
@@ -354,7 +354,7 @@ Base.show(io::IO, lay::Layer) = print(io,
                                       "Layer - ", length(lay.units), " Units\n",
                                       "pct_act_scale: ",lay.pct_act_scale,"\n",
                                       "acts_p_avg: ",   lay.acts_p_avg,"\n",
-                                      "netin_avg: ",    lay.netin_avg,"\n",
+                                      "ge_avg: ",    lay.ge_avg,"\n",
                                       "wt: ",           lay.wt,"\n",
                                       "ce_wt: ",        lay.ce_wt,"\n",
                                       "N: ",            lay.N,"\n",
@@ -384,7 +384,9 @@ function layer(dims::Tuple{Int64, Int64} = (1,1))
     lay = Layer(units, 
                 pct_act_scale, 
                 acts_avg, 
-                0,
+                0.0, # ge_avg
+                0.0, # maxvsavg
+                0.0, # ge_max
                 zeros(Float64, (1,1)),
                 zeros(Float64, (1,1)),
                 N,
@@ -432,21 +434,41 @@ function cycle(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64
      
     ## obtaining the net inputs    
     # GeRaw += Sum_(recv) Prjn.GScale * Send.Act * Wt        
-    netins = lay.ce_wt * raw_inputs  # contrast-enhanced weights are used
+    ge_raw = lay.ce_wt * raw_inputs  # contrast-enhanced weights are used
     if any(ext_inputs) .> 0.0
-        netins = netins .+ ext_inputs
+        ge_raw = ge_raw .+ ext_inputs
     end
 
     ## obtaining inhibition
-    lay.netin_avg = mean(netins)
-    ffi = lay.ff * max(lay.netin_avg - lay.ff0, 0)
+    lay.ge_avg = mean(ge_raw)
+
+    # it seems for a majority of the time, this won't be done, but
+    # it's here just in case
+    if lay.maxvsage > 0.0
+        for value in ge_raw
+            lay.ge_max = 0.0 # TODO does this go here?
+            if value > lay.ge_max
+                lay.ge_max = value
+            end
+        end
+        # ffNetin = avgGe + FFFBParams.MaxVsAvg * (maxGe - avgGe)
+        ffNetin = lay.ge_avg + lay.maxvsage * (lay.ge_max - lay.ge_avg)
+    else
+        ffNetin = lay.ge_avg
+    end
+    
+
+    # ffi = FFFBParams.FF * MAX(ffNetin - FFBParams.FF0, 0)
+    ffi = lay.ff * max(ffNetin - lay.ff0, 0)
+
+    # lfbi += (1 / FFFBParams.FBTau) * (FFFBParams.FB * avgAct - fbi
     lay.fbi = lay.fbi + lay.fb_dt * (lay.fb * acts_avg(lay) - lay.fbi)
     g_i = lay.gi * (ffi + lay.fbi)
     
     ## calling the cycle method for all units
     # function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
     for i in 1:lay.N
-        cycle(lay.units[i], netins[i], g_i)
+        cycle(lay.units[i], ge_raw[i], g_i)
     end
 end
 
@@ -854,7 +876,7 @@ function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     #          specifies the external input to each of its units.
     #          An empty matrix denotes no input to that layer.
     # clamp_inp = a binary flag. 1 -> layers are clamped to their
-    #             input value. 0 -> inputs summed to netins.
+    #             input value. 0 -> inputs summed to ge_raw.
     
     ## Testing the arguments and reshaping the input
     @assert length(inputs) == net.n_lays "Number of layers inconsistent with number of inputs in network cycle"
@@ -882,7 +904,6 @@ function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     for lay in 1:net.n_lays
         scaled_acts_array[lay] = scaled_acts(net.layers[lay])
     end
-    
     
     ## For each unclamped layer, we put all its scaled inputs in one
     #  column vector, and call its cycle function with that vector
