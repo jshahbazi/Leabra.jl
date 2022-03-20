@@ -57,7 +57,7 @@ end
 # dtvm = rate constant that determines how fast membrance potential changes
 #       dtvm = vm_dt = ac.Dt.VmDt = v_dt
 
-mutable struct Unit 
+mutable struct Unit # rate code approximation
     act::Float64        # = 0.2           # "firing rate" of the unit
     avg_ss::Float64     # = act           # super-short time-scale activation average
     avg_s::Float64      # = act           # short time-scale activation average
@@ -122,27 +122,19 @@ function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
     i_net = i_e + i_i + i_l #+ rand() # noise?
     
     # almost half-step method for updating v_m (adapt doesn't half step)
-    v_m_h = u.v_m + 0.5 * u.integ_dt * u.vm_dt * (i_net - u.adapt)
-    i_e_h = u.g_e * (u.v_rev_e - v_m_h)
-    i_i_h =   g_i * (u.v_rev_i - v_m_h)
-    i_l_h = u.g_l * (u.v_rev_l - v_m_h)
-    i_net_h = i_e_h + i_i_h + i_l_h
-    # i_net_h = u.g_e*(u.v_rev_e - v_m_h) + u.g_l*(u.v_rev_l - v_m_h) + g_i*(u.v_rev_i - v_m_h)
-    
-    u.v_m   = u.v_m   + u.integ_dt * u.vm_dt * (i_net_h - u.adapt)
+    v_m_half = u.v_m + 0.5 * u.integ_dt * u.vm_dt * (i_net - u.adapt)
+    i_e_h    = u.g_e * (u.v_rev_e - v_m_half)
+    i_i_h    =   g_i * (u.v_rev_i - v_m_half)
+    i_l_h    = u.g_l * (u.v_rev_l - v_m_half)
+    i_net_h  = i_e_h + i_i_h + i_l_h # condensed version: i_net_h = u.g_e*(u.v_rev_e - v_m_half) + u.g_l*(u.v_rev_l - v_m_half) + g_i*(u.v_rev_i - v_m_half)
+    u.v_m    = u.v_m   + u.integ_dt * u.vm_dt * (i_net_h - u.adapt)
 
     # new rate coded version of i_net
     i_e_r = u.g_e * (u.v_rev_e - u.vm_eq)
     i_i_r =   g_i * (u.v_rev_i - u.vm_eq)
     i_l_r = u.g_l * (u.v_rev_l - u.vm_eq)
     i_net_r = i_e_r + i_i_r + i_l_r 
-    
     u.vm_eq = u.vm_eq + u.integ_dt * u.vm_dt * (i_net_r - u.adapt)    
-    
-    ## Finding activation
-    # finding threshold excitatory conductance
-    # geThr = (Gi * (Erev.I -  Thr)   + Gbar.L * (Erev.L - Thr) / (Thr - Erev.E)
-    g_e_thr = (g_i * (u.v_rev_i - u.thr) + u.g_l * (u.v_rev_l - u.thr) - u.adapt) / (u.thr - u.v_rev_e)
     
     # finding whether there's an action potential
     if u.v_m > u.spk_thr
@@ -163,10 +155,16 @@ function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
     if u.vm_eq <= u.thr
         new_act = nxx1(u.vm_eq - u.thr)[1]
     else
+        ## Finding activation
+        # finding threshold excitatory conductance
+        # geThr = (Gi * (Erev.I -  Thr)   + Gbar.L * (Erev.L - Thr) / (Thr - Erev.E)
+        # geΘ = gi(Ei −Θ)+gl(El −Θ)/Θ-Ee
+        g_e_thr = (g_i * (u.v_rev_i - u.thr) + u.g_l * (u.v_rev_l - u.thr) - u.adapt) / (u.thr - u.v_rev_e)
         new_act = nxx1(u.g_e - g_e_thr)[1]
     end
 
     # update activity
+    # y(t) = y(t − 1) + dtvm (y∗(x) − y(t − 1))
     # Act += (1 / DTParams.VmTau) * (nwAct - Act)
     # vm_dt is 1/vm_tau
     u.act = u.act + u.integ_dt * u.vm_dt * (new_act - u.act)
@@ -342,11 +340,13 @@ mutable struct Layer
     N::Int64
     fbi::Float64
 
-    const ff::Float64           # = 1.0
-    const ff0::Float64          # = 0.1
-    const fb::Float64           # = 0.5
-    const fb_dt::Float64        # = 1/1.4 # time step for fb inhibition (fb_tau=1.4)
-    const gi::Float64           # = 2.0
+    const fb_dt::Float64        # = 1/1.4 # Integration constant for feedback inhibition (fb_tau=1.4)
+    
+    const ff::Float64           # = 1.0   # feedforward scaling of inhibition
+    const ff0::Float64          # = 0.1   # threshold
+    const fb::Float64           # = 0.5   # feedback scaling of inhibition
+    
+    const gi::Float64           # = 2.0   # inhibition multiplier
     const avg_act_dt::Float64   # = 0.01
 end
 
@@ -389,7 +389,7 @@ function layer(dims::Tuple{Int64, Int64} = (1,1))
                 zeros(Float64, (1,1)),
                 N,
                 fb * acts_avg,
-                1.0, 0.1, fb, 1/1.4, 2.0, 0.01
+                1/1.4, 1.0, 0.1, fb,  2.0, 0.01
     )
 
     return lay
@@ -432,7 +432,7 @@ function cycle(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64
      
     ## obtaining the net inputs    
     # GeRaw += Sum_(recv) Prjn.GScale * Send.Act * Wt        
-    netins = lay.ce_wt * raw_inputs  # you use contrast-enhanced weights
+    netins = lay.ce_wt * raw_inputs  # contrast-enhanced weights are used
     if any(ext_inputs) .> 0.0
         netins = netins .+ ext_inputs
     end
@@ -657,6 +657,7 @@ function XCAL_learn(net::Network)
         avg_l_lrn[lay] = net.avg_l_lrn_min .+ rel_avg_l(net.layers[lay]) .* (net.avg_l_lrn_max - net.avg_l_lrn_min)
     end
     
+    # link: def learning_rule(self, connection):
     ## For each connection matrix, calculate the intermediate vars.
     srs = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays)) # srs{i,j} = matrix of short-term averages
                                                                         # where the rows correspond to the
@@ -881,6 +882,7 @@ function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     for lay in 1:net.n_lays
         scaled_acts_array[lay] = scaled_acts(net.layers[lay])
     end
+    
     
     ## For each unclamped layer, we put all its scaled inputs in one
     #  column vector, and call its cycle function with that vector
