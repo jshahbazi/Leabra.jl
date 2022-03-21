@@ -153,21 +153,21 @@ function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
     # else
     #   nwAct = NoisyXX1(Ge * Gbar.E - geThr)
     if u.vm_eq <= u.thr
-        new_act = nxx1(u.vm_eq - u.thr)[1]
+        nw_act = nxx1(u.vm_eq - u.thr)[1]
     else
         ## Finding activation
         # finding threshold excitatory conductance
         # geThr = (Gi * (Erev.I -  Thr)   + Gbar.L * (Erev.L - Thr) / (Thr - Erev.E)
         # geΘ = gi(Ei −Θ)+gl(El −Θ)/Θ-Ee
         g_e_thr = (g_i * (u.v_rev_i - u.thr) + u.g_l * (u.v_rev_l - u.thr) - u.adapt) / (u.thr - u.v_rev_e)
-        new_act = nxx1(u.g_e - g_e_thr)[1]
+        nw_act = nxx1(u.g_e - g_e_thr)[1]
     end
 
     # update activity
     # y(t) = y(t − 1) + dtvm (y∗(x) − y(t − 1))
     # Act += (1 / DTParams.VmTau) * (nwAct - Act)
     # vm_dt is 1/vm_tau
-    u.act = u.act + u.integ_dt * u.vm_dt * (new_act - u.act)
+    u.act = u.act + u.integ_dt * u.vm_dt * (nw_act - u.act)
 
 
     ## Updating adaptation current
@@ -346,7 +346,7 @@ mutable struct Layer
     const ff::Float64           # = 1.0   # feedforward scaling of inhibition
     const ff0::Float64          # = 0.1   # threshold
     const fb::Float64           # = 0.5   # feedback scaling of inhibition    
-    const gi::Float64           # = 2.0   # inhibition multiplier
+    const gi::Float64           # = 1.8   # inhibition multiplier
     const avg_act_dt::Float64   # = 0.01
 end
 
@@ -391,7 +391,7 @@ function layer(dims::Tuple{Int64, Int64} = (1,1))
                 zeros(Float64, (1,1)),
                 N,
                 fb * acts_avg,
-                1/1.4, 1.0, 0.1, fb,  2.0, 0.01
+                1/1.4, 1.0, 0.1, fb, 1.8, 0.01
     )
 
     return lay
@@ -461,12 +461,12 @@ function cycle(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64
     # ffi = FFFBParams.FF * MAX(ffNetin - FFBParams.FF0, 0)
     ffi = lay.ff * max(ffNetin - lay.ff0, 0)
 
-    # lfbi += (1 / FFFBParams.FBTau) * (FFFBParams.FB * avgAct - fbi
+    # fbi += (1 / FFFBParams.FBTau) * (FFFBParams.FB * avgAct - fbi
     lay.fbi = lay.fbi + lay.fb_dt * (lay.fb * acts_avg(lay) - lay.fbi)
+    # Gi = FFFBParams.Gi * (ffi + fbi)
     g_i = lay.gi * (ffi + lay.fbi)
     
     ## calling the cycle method for all units
-    # function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
     for i in 1:lay.N
         cycle(lay.units[i], ge_raw[i], g_i)
     end
@@ -547,7 +547,7 @@ mutable struct Network
     # TODO add type of layer for avg_l_lrn, it is 0.0004 on default, but 0 for output layers (they do not need self-organized learning).
     const avg_l_lrn_max::Float64    # = 0.01; # max amount of "BCM" learning in XCAL
     const avg_l_lrn_min::Float64    # = 0.0;  # min amount of "BCM" learning in XCAL
-    const m_in_s::Float64           # = 0.1; # proportion of medium to short term avgs. in XCAL
+    const lrn_m::Float64           # = 0.1; # proportion of medium to short term avgs. in XCAL
     const m_lrn::Float64            # = 1;  # proportion of error-driven learning in XCAL
     const d_thr::Float64            # = 0.0001; # threshold for XCAL "check mark" function
     const d_rev::Float64            # = 0.1;    # reversal value for XCAL "check mark" function
@@ -670,12 +670,14 @@ function XCAL_learn(net::Network)
 
     for lay in 1:net.n_lays
         (avg_s[lay], avg_m[lay], avg_l[lay]) = averages(net.layers[lay]) # layer.averages() function
-        avg_s_eff[lay] = net.m_in_s * avg_m[lay] + (1 - net.m_in_s) * avg_s[lay];
+        # AvgSLrn = (1-LrnM) * AvgS + LrnM * AvgM
+        avg_s_eff[lay] = net.lrn_m * avg_m[lay] + (1 - net.lrn_m) * avg_s[lay];
     end
     
     ## obtaining avg_l_lrn
     avg_l_lrn = Array{Vector{Float64}, 1}(undef, net.n_lays)
     for lay in 1:net.n_lays
+        # AvgLLrn = ((Max - Min) / (Gain - Min)) * (AvgL - Min)
         avg_l_lrn[lay] = net.avg_l_lrn_min .+ rel_avg_l(net.layers[lay]) .* (net.avg_l_lrn_max - net.avg_l_lrn_min)
     end
     
@@ -691,7 +693,9 @@ function XCAL_learn(net::Network)
             # notice we only calculate the 'upper triangle' of the
             # cell arrays because of symmetry
             if net.connections[rcv,snd] > 0 || net.connections[snd,rcv] > 0
+                # srs = Send.AvgSLrn * Recv.AvgSLrn
                 srs[rcv,snd] = avg_s_eff[rcv] * transpose(avg_s_eff[snd])
+                # srm = Send.AvgM * Recv.AvgM
                 srm[rcv,snd] = avg_m[rcv] * transpose(avg_m[snd])
 
                 if snd != rcv # using symmetry
@@ -710,6 +714,7 @@ function XCAL_learn(net::Network)
             if net.connections[rcv,snd] > 0
                 sndN = net.layers[snd].N;
                 outer = (1, sndN)
+                # dwt = XCAL(srs, srm) + Recv.AvgLLrn * XCAL(srs, Recv.AvgL)
                 dwt[rcv,snd] = net.lrate .* ( net.m_lrn .* xcal(net, srs[rcv,snd], srm[rcv,snd]) .+ ((expand(avg_l_lrn[rcv], 2, size(srs[rcv,snd])[2])) .* xcal(net, srs[rcv,snd], transpose(repeat(transpose(avg_l[rcv]), sndN)))));
             end
         end
@@ -772,6 +777,19 @@ function xcal(net::Network, x, th)
     # this function implements the "check mark" function in XCAL.
     # x = an array of abscissa values.
     # th = an array of threshold values, same size as x
+
+    # XCAL(x, th) = (x < DThr) ? 0 : (x > th * DRev) ? (x - th) : (-x * ((1-DRev)/DRev))
+    # DThr = 0.0001, DRev = 0.1 defaults, and x ? y : z terminology is C syntax for: if x is true, then y, else z
+
+    # python approach
+    # if x < net.d_thr
+    #     return 0
+    # elseif x > (net.d_rev * th)
+    #     return (x - th)
+    # else
+    #     return (-x * ((1 - net.d_rev)/net.d_rev))
+    # end
+
 
     f = zeros(size(x));
     temp = x .> net.d_thr
