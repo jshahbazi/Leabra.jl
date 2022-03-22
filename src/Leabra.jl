@@ -71,28 +71,28 @@ mutable struct Unit # rate code approximation
 
     # constants
     const g_e_dt::Float64     # = 1/1.4   # time step constant for update of 'g_e'
-    const integ_dt::Float64   # = 1.0;    # time step constant for integration of cycle dynamics
-    const vm_dt::Float64      # = 1/3.3;  # time step constant for membrane potential
-    const l_dn_dt::Float64    # = 1/2.5;  # time step constant for avg_l decrease   # TODO never used
-    const adapt_dt::Float64   # = 1/144;  # time step constant for adaptation
-    const ss_dt::Float64      # = 0.5;    # time step for super-short average
-    const s_dt::Float64       # = 0.5;    # time step for short average
-    const m_dt::Float64       # = 0.1;    # time step for medium-term average
-    const avg_l_dt::Float64   # = 0.1;    # time step for long-term average
-    const avg_l_max::Float64  # = 1.5;    # max value of avg_l
-    const avg_l_min::Float64  # = 0.1;    # min value of avg_l
-    const avg_l_gain::Float64 # = 2.5;    
-    # TODO it is very strange that v_rev_e is set to 1, so that v_m (at least i think) cannot grow larger than 1, but spike_thr is 1.2, so there will never be a spike right; don't know
-    const v_rev_e::Float64    # = 1.0;    # excitatory reversal potential
-    const v_rev_i::Float64    # = 0.25;   # inhibitory reversal potential
-    const v_rev_l::Float64    # = 0.3;    # leak reversal potential
-    const g_l::Float64        # = 0.1;    # leak conductance
-    const thr::Float64        # = 0.5;    # normalized "rate threshold"
-    const spk_thr::Float64    # = 1.2;    # normalized spike threshold  # TODO why is spk_thr 1.2; this is not a v value of -50mV...
-    const vm_r::Float64       # = 0.3;    # reset potential after spike
-    const vm_gain::Float64    # = 0.04;   # gain that voltage produces on adaptation
+    const integ_dt::Float64   # = 1.0     # time step constant for integration of cycle dynamics
+    const vm_dt::Float64      # = 1/3.3   # time step constant for membrane potential
+    const l_dn_dt::Float64    # = 1/2.5   # time step constant for avg_l decrease   # TODO never used
+    const adapt_dt::Float64   # = 1/144   # time step constant for adaptation
+    const ss_dt::Float64      # = 0.5     # time step for super-short average
+    const s_dt::Float64       # = 0.5     # time step for short average
+    const m_dt::Float64       # = 0.1     # time step for medium-term average
+    const avg_l_dt::Float64   # = 0.1     # time step for long-term average
+    const avg_l_max::Float64  # = 1.5     # max value of avg_l
+    const avg_l_min::Float64  # = 0.1     # min value of avg_l
+    const avg_l_gain::Float64 # = 2.5     
+    # TODO it is very strange that v_rev_e is set to 1, so that v_m (at least i think) cannot grow larger than 1, but spike_thr is 1.2, so there will never be a spike right  don't know
+    const v_rev_e::Float64    # = 1.0     # excitatory reversal potential
+    const v_rev_i::Float64    # = 0.25    # inhibitory reversal potential
+    const v_rev_l::Float64    # = 0.3     # leak reversal potential
+    const g_l::Float64        # = 0.1     # leak conductance
+    const thr::Float64        # = 0.5     # normalized "rate threshold"
+    const spk_thr::Float64    # = 1.2     # normalized spike threshold  # TODO why is spk_thr 1.2  this is not a v value of -50mV...
+    const vm_r::Float64       # = 0.3     # reset potential after spike
+    const vm_gain::Float64    # = 0.04    # gain that voltage produces on adaptation
     const spike_gain::Float64 # = 0.00805 # effect of spikes on adaptation
-    const l_up_inc::Float64   # = 0.2;    # increase in avg_l if avg_m has been 'large'   # TODO never used  # maybe: (increase in avg_l if avg_m has been "large")
+    const l_up_inc::Float64   # = 0.2     # increase in avg_l if avg_m has been 'large'   # TODO never used  # maybe: (increase in avg_l if avg_m has been "large")
     
     function Unit()
         return new( 0.2, 0.2, 0.2, 0.2, 0.1, 0.0, 0.3, 0.3, 0.0, false,
@@ -185,12 +185,12 @@ function clamped_cycle(u::Unit, input)
     # to the input, and all the averages are updated accordingly.
     
     ## Clamping the activty to the input
-    u.act = input;
+    u.act = input
     
     ## updating averages
-    u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act    - u.avg_ss);
-    u.avg_s  =  u.avg_s + u.integ_dt * u.s_dt  * (u.avg_ss - u.avg_s);
-    u.avg_m  =  u.avg_m + u.integ_dt * u.m_dt  * (u.avg_s  - u.avg_m);
+    u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act    - u.avg_ss)
+    u.avg_s  =  u.avg_s + u.integ_dt * u.s_dt  * (u.avg_ss - u.avg_s)
+    u.avg_m  =  u.avg_m + u.integ_dt * u.m_dt  * (u.avg_s  - u.avg_m)
 end
 
 
@@ -378,7 +378,7 @@ function layer(dims::Tuple{Int64, Int64} = (1,1))
     
     acts_avg = 0.2 # should be the average but who knows
     avg_act_n =  1.0 # should be the avg
-    pct_act_scale = 1/(avg_act_n + 2);
+    pct_act_scale = 1/(avg_act_n + 2)
     fb = 0.5
 
     lay = Layer(units, 
@@ -399,7 +399,7 @@ end
 
 function acts_avg(lay::Layer)
     # get the value of acts_avg, the mean of unit activities
-    return mean(activities(lay));
+    return mean(activities(lay))
 end
 
 function activities(lay::Layer)
@@ -517,10 +517,10 @@ function updt_long_avgs(lay::Layer)
     # pct_act_scale. If partial connectivity were to be used, this
     # should have the calculation in WtScaleSpec::SLayActScale, in
     # LeabraConSpec.cpp 
-    lay.acts_p_avg = lay.acts_p_avg + lay.avg_act_dt * (acts_avg(lay) - lay.acts_p_avg);
+    lay.acts_p_avg = lay.acts_p_avg + lay.avg_act_dt * (acts_avg(lay) - lay.acts_p_avg)
                  
-    r_avg_act_n = max(round(lay.acts_p_avg * lay.N), 1);
-    lay.pct_act_scale = 1/(r_avg_act_n + 2);  
+    r_avg_act_n = max(round(lay.acts_p_avg * lay.N), 1)
+    lay.pct_act_scale = 1/(r_avg_act_n + 2)  
 end
 
 function reset(lay::Layer)
@@ -545,14 +545,14 @@ mutable struct Network
     lrate::Float64
     
     # TODO add type of layer for avg_l_lrn, it is 0.0004 on default, but 0 for output layers (they do not need self-organized learning).
-    const avg_l_lrn_max::Float64    # = 0.01; # max amount of "BCM" learning in XCAL
-    const avg_l_lrn_min::Float64    # = 0.0;  # min amount of "BCM" learning in XCAL
-    const lrn_m::Float64           # = 0.1; # proportion of medium to short term avgs. in XCAL
-    const m_lrn::Float64            # = 1;  # proportion of error-driven learning in XCAL
-    const d_thr::Float64            # = 0.0001; # threshold for XCAL "check mark" function
-    const d_rev::Float64            # = 0.1;    # reversal value for XCAL "check mark" function
-    const off::Float64              # = 1.0;    # 'offset' in the SIG function for contrast enhancement
-    const gain::Float64             # = 6.0;   # gain in the SIG function for contrast enhancement
+    const avg_l_lrn_max::Float64    # = 0.01    # max amount of "BCM" learning in XCAL
+    const avg_l_lrn_min::Float64    # = 0.0     # min amount of "BCM" learning in XCAL
+    const lrn_m::Float64            # = 0.1     # proportion of medium to short term avgs. in XCAL
+    const m_lrn::Float64            # = 1       # proportion of error-driven learning in XCAL
+    const d_thr::Float64            # = 0.0001  # threshold for XCAL "check mark" function
+    const d_rev::Float64            # = 0.1     # reversal value for XCAL "check mark" function
+    const off::Float64              # = 1.0     # 'offset' in the SIG function for contrast enhancement
+    const gain::Float64             # = 6.0     # gain in the SIG function for contrast enhancement
 end
 
 function network(dim_layers, connections, w0)
@@ -566,8 +566,8 @@ function network(dim_layers, connections, w0)
     #      initial weights for the connections from layer j to i             
     
     ## Initial test of argument dimensions
-    n_lay = length(dim_layers);  # number of layers
-    (nrc, ncc) = size(connections);
+    n_lay = length(dim_layers)  # number of layers
+    (nrc, ncc) = size(connections)
 
     @assert nrc == ncc "Non-square connections matrix in network constructor"
     @assert nrc == n_lay "Number of layers inconsistent with connection matrix in network constructor"
@@ -591,8 +591,8 @@ function network(dim_layers, connections, w0)
     end
 
     for i in 1:n_lay
-        net.layers[i] = layer(dim_layers[i]);
-        net.n_units = net.n_units + net.layers[i].N;
+        net.layers[i] = layer(dim_layers[i])
+        net.n_units = net.n_units + net.layers[i].N
     end              
 
     ## Second test of argument dimensions
@@ -600,29 +600,29 @@ function network(dim_layers, connections, w0)
         for j in 1:n_lay
             if w0[i,j] == 0.0
                 if connections[i,j] > 0.0
-                    throw("Connected layers have no connection weights");
+                    throw("Connected layers have no connection weights")
                 end
             else
                 if connections[i,j] == 0.0
-                    throw("Non-empty weight matrix for unconnected layers");
+                    throw("Non-empty weight matrix for unconnected layers")
                 end
 
-                (r,c) = size(w0[i,j]);
+                (r,c) = size(w0[i,j])
                 if net.layers[i].N != r || net.layers[j].N != c
-                    throw("Initial weigths are inconsistent with layer dimensions");
+                    throw("Initial weigths are inconsistent with layer dimensions")
                 end
             end
         end
     end
-    net.connections = connections; # assigning layer connection matrix
+    net.connections = connections # assigning layer connection matrix
     
     ## Setting the inital weights for each layer
     # first find how many units project to the layer in all the network
-    lay_inp_size::Array{Int64} = zeros(1,n_lay);
+    lay_inp_size::Array{Int64} = zeros(1,n_lay)
     for i in 1:n_lay
         for j in 1:n_lay
             if connections[i,j] > 0  # if layer j projects to layer i
-                lay_inp_size[i] = lay_inp_size[i] + net.layers[j].N;
+                lay_inp_size[i] = lay_inp_size[i] + net.layers[j].N
             end
         end
     end
@@ -630,12 +630,12 @@ function network(dim_layers, connections, w0)
     # add the weights for each entry in w0 as a group of columns in wt
     for i in 1:n_lay
         net.layers[i].wt = zeros(Float64, (net.layers[i].N, lay_inp_size[i]))
-        index = 1;
+        index = 1
         for j = 1:n_lay
             if connections[i,j] > 0  # if layer j projects to layer i
-                nj = net.layers[j].N;
-                net.layers[i].wt[:,index:index+nj-1] = w0[i,j];
-                index = index + nj;
+                nj = net.layers[j].N
+                net.layers[i].wt[:,index:index+nj-1] = w0[i,j]
+                index = index + nj
             end
         end
     end 
@@ -659,7 +659,7 @@ function XCAL_learn(net::Network)
     
     ## updating the long-term averages
     for lay in 1:net.n_lays
-        updt_avg_l(net.layers[lay]); 
+        updt_avg_l(net.layers[lay]) 
     end
     
     ## Extracting the averages for all layers            
@@ -671,7 +671,7 @@ function XCAL_learn(net::Network)
     for lay in 1:net.n_lays
         (avg_s[lay], avg_m[lay], avg_l[lay]) = averages(net.layers[lay]) # layer.averages() function
         # AvgSLrn = (1-LrnM) * AvgS + LrnM * AvgM
-        avg_s_eff[lay] = net.lrn_m * avg_m[lay] + (1 - net.lrn_m) * avg_s[lay];
+        avg_s_eff[lay] = net.lrn_m * avg_m[lay] + (1 - net.lrn_m) * avg_s[lay]
     end
     
     ## obtaining avg_l_lrn
@@ -712,10 +712,10 @@ function XCAL_learn(net::Network)
     for rcv in 1:net.n_lays
         for snd in 1:net.n_lays
             if net.connections[rcv,snd] > 0
-                sndN = net.layers[snd].N;
+                sndN = net.layers[snd].N
                 outer = (1, sndN)
                 # dwt = XCAL(srs, srm) + Recv.AvgLLrn * XCAL(srs, Recv.AvgL)
-                dwt[rcv,snd] = net.lrate .* ( net.m_lrn .* xcal(net, srs[rcv,snd], srm[rcv,snd]) .+ ((expand(avg_l_lrn[rcv], 2, size(srs[rcv,snd])[2])) .* xcal(net, srs[rcv,snd], transpose(repeat(transpose(avg_l[rcv]), sndN)))));
+                dwt[rcv,snd] = net.lrate .* ( net.m_lrn .* xcal(net, srs[rcv,snd], srm[rcv,snd]) .+ ((expand(avg_l_lrn[rcv], 2, size(srs[rcv,snd])[2])) .* xcal(net, srs[rcv,snd], transpose(repeat(transpose(avg_l[rcv]), sndN)))))
             end
         end
     end
@@ -729,7 +729,7 @@ function XCAL_learn(net::Network)
                 if isempty_DW
                     DW = dwt[rcv,snd]
                 else
-                    DW = hcat(DW, dwt[rcv,snd]);
+                    DW = hcat(DW, dwt[rcv,snd])
                 end
                 isempty_DW = false
             end
@@ -741,8 +741,8 @@ function XCAL_learn(net::Network)
             idxp = net.layers[rcv].wt .> 0
             idxn = .!idxp # maps ! function onto the BitArray
             
-            net.layers[rcv].wt[idxp] = net.layers[rcv].wt[idxp] .+ (1 .- net.layers[rcv].wt[idxp]) .* DW[idxp];
-            net.layers[rcv].wt[idxn] = net.layers[rcv].wt[idxn] .+ net.layers[rcv].wt[idxn] .* DW[idxn];
+            net.layers[rcv].wt[idxp] = net.layers[rcv].wt[idxp] .+ (1 .- net.layers[rcv].wt[idxp]) .* DW[idxp]
+            net.layers[rcv].wt[idxn] = net.layers[rcv].wt[idxn] .+ net.layers[rcv].wt[idxn] .* DW[idxn]
         end
     end
     
@@ -769,7 +769,7 @@ function m1(net::Network)
     # obtains the m1 factor: the slope of the left-hand line in the
     # "check mark" XCAL function. Notice it includes the negative
     # sign.
-    return (net.d_rev - 1.0) / net.d_rev;
+    return (net.d_rev - 1.0) / net.d_rev
 end
         
 function xcal(net::Network, x, th)
@@ -791,14 +791,14 @@ function xcal(net::Network, x, th)
     # end
 
 
-    f = zeros(size(x));
+    f = zeros(size(x))
     temp = x .> net.d_thr
     temp2 = x .< (net.d_rev * th)
     idx1 = temp .& temp2
-    idx2 = x .>= (net.d_rev * th);
+    idx2 = x .>= (net.d_rev * th)
 
-    f[idx1] = m1(net) * x[idx1];
-    f[idx2] = x[idx2] - th[idx2];
+    f[idx1] = m1(net) * x[idx1]
+    f[idx2] = x[idx2] - th[idx2]
     return f      
 end
 
@@ -826,15 +826,15 @@ function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
         for j in 1:net.n_lays
             if all(w[i,j] .== 0.0) # if isempty(w[i,j])
                 if net.connections[i,j] > 0
-                    throw("Connected layers have no connection weights");
+                    throw("Connected layers have no connection weights")
                 end
             else
                 if net.connections[i,j] == 0
-                    throw("Non-empty weight matrix for unconnected layers");
+                    throw("Non-empty weight matrix for unconnected layers")
                 end
-                (r,c) = size(w[i,j]);
+                (r,c) = size(w[i,j])
                 if net.layers[i].N != r || net.layers[j].N != c
-                    throw("Initial weights are inconsistent with layer dimensions");
+                    throw("Initial weights are inconsistent with layer dimensions")
                 end
             end
         end
@@ -846,20 +846,20 @@ function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
     for i in 1:net.n_lays
         for j in 1:net.n_lays
             if net.connections[i,j] > 0  # if layer j projects to layer i
-                lay_inp_size[i] = lay_inp_size[i] + net.layers[j].N;
+                lay_inp_size[i] = lay_inp_size[i] + net.layers[j].N
             end
         end
     end
     
     # add the weights for each entry in w0 as a group of columns in wt
     for i in 1:net.n_lays
-        net.layers[i].wt = zeros(net.layers[i].N,lay_inp_size[i]);
-        index = 1;
+        net.layers[i].wt = zeros(net.layers[i].N,lay_inp_size[i])
+        index = 1
         for j in 1:net.n_lays
             if net.connections[i,j] > 0  # if layer j projects to layer i
-                nj = net.layers[j].N;
-                net.layers[i].wt[:,index:index+nj-1] = w[i,j];
-                index = index + nj;
+                nj = net.layers[j].N
+                net.layers[i].wt[:,index:index+nj-1] = w[i,j]
+                index = index + nj
             end
         end
     end   
@@ -876,12 +876,12 @@ function get_weights(netnet::Network)
     # layer snd to layer rcv.
     w = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays))
     for rcv in 1:net.n_lays
-        idx1 = 1; # column where the weights from layer 'snd' start
+        idx1 = 1 # column where the weights from layer 'snd' start
         for snd in 1:net.n_lays
             if net.connections[rcv,snd] > 0
-                Nsnd = net.layers[rcv].N;
-                w[rcv,snd] = net.layers[rcv].wt[:,idx1:idx1+Nsnd-1];
-                idx1 = idx1 + Nsnd;
+                Nsnd = net.layers[rcv].N
+                w[rcv,snd] = net.layers[rcv].wt[:,idx1:idx1+Nsnd-1]
+                idx1 = idx1 + Nsnd
             end
         end               
     end
@@ -901,16 +901,16 @@ function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
 
     for inp in 1:net.n_lays  # reshaping inputs into column vectors
         if any(inputs[inp] .> 0.0) #if ~isempty(inputs[inp])
-            inputs[inp] = reshape(inputs[inp], net.layers[inp].N, 1);
+            inputs[inp] = reshape(inputs[inp], net.layers[inp].N, 1)
         end
     end
     
     ## First we set all clamped layers to their input values
-    clamped_lays = zeros(1, net.n_lays);
+    clamped_lays = zeros(1, net.n_lays)
     if clamp_inp
         for lay in 1:net.n_lays
             if any(inputs[lay] .> 0.0) # if ~isempty(inputs[lay])
-                clamped_cycle(net.layers[lay], inputs[lay]);
+                clamped_cycle(net.layers[lay], inputs[lay])
                 clamped_lays[lay] = 1
             end
         end
@@ -928,20 +928,20 @@ function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     for recv in 1:net.n_lays
         if all(clamped_lays[recv] .== 0.0) # if the layer is not clamped
             # for each 'recv' layer we find its input vector
-            long_input = zeros(1, net.n_units); # preallocating for speed
-            n_inps = 0;  # will have the # of input units to 'recv'
-            n_sends = 0; # will have the # of layers sending to 'recv'
+            long_input = zeros(1, net.n_units) # preallocating for speed
+            n_inps = 0  # will have the # of input units to 'recv'
+            n_sends = 0 # will have the # of layers sending to 'recv'
             conns = (net.connections[recv, :] .> 0.0)
-            wt_scale_rel = net.connections[recv, conns];
+            wt_scale_rel = net.connections[recv, conns]
             for send in 1:net.n_lays
                 if net.connections[recv, send] > 0
-                    n_sends = n_sends + 1;
+                    n_sends = n_sends + 1
                     long_input[(1 + n_inps):(n_inps + net.layers[send].N)] = wt_scale_rel[n_sends] .* scaled_acts_array[send]
-                    n_inps = n_inps + net.layers[send].N;
+                    n_inps = n_inps + net.layers[send].N
                 end
             end
             # now we call 'cycle'
-            cycle(net.layers[recv], long_input[1:n_inps], inputs[recv]);                   
+            cycle(net.layers[recv], long_input[1:n_inps], inputs[recv])                   
         end
     end
     
@@ -955,88 +955,88 @@ function test_network()
     # # 1.1) Set the dimensions of the layers
     dim_lays = [(5,5), (10, 10), (5, 5)]
     # # 1.2) Specify connectivity between layers
-    connections = [0  0  0;
-                1  0 .2;
-                0  1  0];
+    connections = [0  0  0
+                1  0 .2
+                0  1  0]
     #    # connections(i,j) = c means that layer i receives connections from j,
     #    # and that they have a relative strength c. In this case, feedback
     #    # connections are 5 times weaker. The relative weight scale of layer i
     #    # comes from the non-zero entries of row i.   
     #    # The network constructor will normalize this matrix so that if there
     #    # are non-zero entries in a row, they add to 1.
-    n_lays = length(dim_lays);
-    n_units = zeros(Int64,1,n_lays); ## number of units in each layer
+    n_lays = length(dim_lays)
+    n_units = zeros(Int64,1,n_lays) ## number of units in each layer
 
     for i in 1:n_lays
-        n_units[i] = dim_lays[i][1] * dim_lays[i][2];
+        n_units[i] = dim_lays[i][1] * dim_lays[i][2]
     end
 
     w0 = Array{Any}(undef, (n_lays,n_lays))
     for rcv in 1:n_lays
         for snd in 1:n_lays
             if connections[rcv,snd] > 0
-                w0[rcv,snd] = 0.3 .+ 0.4*rand(Uniform(),n_units[rcv],n_units[snd]);
+                w0[rcv,snd] = 0.3 .+ 0.4*rand(Uniform(),n_units[rcv],n_units[snd])
             else
                 w0[rcv,snd] = 0.0
             end
         end
     end
 
-    net = network(dim_lays, connections, w0);
+    net = network(dim_lays, connections, w0)
 
     # ## 4) Let's create some inputs
-    # n_inputs = 15;  # number of input-output patterns to associate
+    # n_inputs = 15  # number of input-output patterns to associate
     # patterns = Array{Matrix{Float64}, 2}(undef, (n_inputs,2)) # patterns{i,1} is the i-th input pattern, and 
     #                                                           # patterns{i,2} is the i-th output pattern.
     # # This will assume that layers 1 and 3 are input and output respectively.
     # # Patterns will be binary.
-    # prop = 0.3; # the proportion of active units in the patterns
+    # prop = 0.3 # the proportion of active units in the patterns
     # for i in 1:n_inputs
-    #     # rand(Uniform(),n_units[rcv],n_units[snd]);
-    #     patterns[i,1] = round.(2 .* prop .* rand(Uniform(), 1, n_units[1]));  # either 0 or 1
-    #     patterns[i,2] = round.(2 .* prop .* rand(Uniform(), 1, n_units[3]));
-    #     patterns[i,1] = 0.01 .+ 0.95 .* patterns[i,1];  # either 0.01 or 0.96
-    #     patterns[i,2] = 0.01 .+ 0.95 .* patterns[i,2];
+    #     # rand(Uniform(),n_units[rcv],n_units[snd])
+    #     patterns[i,1] = round.(2 .* prop .* rand(Uniform(), 1, n_units[1]))  # either 0 or 1
+    #     patterns[i,2] = round.(2 .* prop .* rand(Uniform(), 1, n_units[3]))
+    #     patterns[i,1] = 0.01 .+ 0.95 .* patterns[i,1]  # either 0.01 or 0.96
+    #     patterns[i,2] = 0.01 .+ 0.95 .* patterns[i,2]
     # end
 
 
-    n_inputs = 5;  # number of input-output patterns to associate
+    n_inputs = 5  # number of input-output patterns to associate
     patterns = Array{Matrix{Float64}, 2}(undef, (n_inputs,2)) # patterns{i,1} is the i-th input pattern, and 
                                                               # patterns{i,2} is the i-th output pattern.
     for i in 1:n_inputs # outputs are the same as inputs (an autoassociator)
         patterns[i,1] = rand(Binomial(1,0.5),(n_inputs,n_inputs))
-        patterns[i,2] = patterns[i,1];
+        patterns[i,2] = patterns[i,1]
     end
 
     ## 5) Train the network
 
     # Specify parameters for training
-    n_epochs = 10;  # number of epochs. All input patterns are presented in one.
-    n_trials = n_inputs; # number of trials. One input pattern per trial.
-    n_minus = 50;  # number of minus cycles per trial.
-    n_plus = 25; # number of plus cycles per trial.
+    n_epochs = 10  # number of epochs. All input patterns are presented in one.
+    n_trials = n_inputs # number of trials. One input pattern per trial.
+    n_minus = 50  # number of minus cycles per trial.
+    n_plus = 25 # number of plus cycles per trial.
     lrate_sched = collect(LinRange(0.8, 0.2, n_epochs))
 
-    errors = zeros(n_epochs,n_trials); # cosine error for each pattern
+    errors = zeros(n_epochs,n_trials) # cosine error for each pattern
 
     for epoch in 1:n_epochs
-        order = randperm(n_trials); # order of presentation of inputs this epoch
-        net.lrate = lrate_sched[epoch]; # learning rate for this epoch
+        order = randperm(n_trials) # order of presentation of inputs this epoch
+        net.lrate = lrate_sched[epoch] # learning rate for this epoch
         for trial in 1:n_trials
-            reset(net);  # randomize the acts for all units
-            pat = order[trial];  # input to be presented this trial
+            reset(net)  # randomize the acts for all units
+            pat = order[trial]  # input to be presented this trial
 
             #++++++ MINUS PHASE +++++++
-            inputs::Vector{Array{Float64}} = [patterns[pat, 1], [], []];
+            inputs::Vector{Array{Float64}} = [patterns[pat, 1], [], []]
             for minus in 1:n_minus # minus cycles: layer 1 is clamped
-                cycle(net, inputs, true);
+                cycle(net, inputs, true)
             end
             outs = (activities(net.layers[3])) # saving the output for testing
 
             #+++++++ PLUS PHASE +++++++
-            inputs = [patterns[pat, 1], [], patterns[pat, 2]];
+            inputs = [patterns[pat, 1], [], patterns[pat, 2]]
             for plus in 1:n_plus # plus cycles: layers 1 and 3 are clamped
-                cycle(net, inputs, true);
+                cycle(net, inputs, true)
             end
             updt_long_avgs(net) # update averages used for net input scaling                            
 
@@ -1049,13 +1049,13 @@ function test_network()
             
             #+++++++ ERRORS +++++++
             # Only the cosine error is used here
-            errors[epoch, pat] = 1 - sum(outs .* transpose(patterns[pat, 2][:])) / ( norm(outs) * norm(transpose(patterns[pat, 2][:])) );                    
+            errors[epoch, pat] = 1 - sum(outs .* transpose(patterns[pat, 2][:])) / ( norm(outs) * norm(transpose(patterns[pat, 2][:])) )                    
         end
 
         println("Epoch $epoch finished")
     end
 
-    mean_errs = mean(errors, dims=2);
+    mean_errs = mean(errors, dims=2)
     println("Mean Errors: $mean_errs")
     @assert all(0.0 .< mean_errs) && all(mean_errs .< 1.0) "Mean Errors are out of range"
 end
