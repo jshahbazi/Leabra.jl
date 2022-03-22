@@ -715,7 +715,9 @@ function XCAL_learn(net::Network)
                 sndN = net.layers[snd].N
                 outer = (1, sndN)
                 # dwt = XCAL(srs, srm) + Recv.AvgLLrn * XCAL(srs, Recv.AvgL)
-                dwt[rcv,snd] = net.lrate .* ( net.m_lrn .* xcal(net, srs[rcv,snd], srm[rcv,snd]) .+ ((expand(avg_l_lrn[rcv], 2, size(srs[rcv,snd])[2])) .* xcal(net, srs[rcv,snd], transpose(repeat(transpose(avg_l[rcv]), sndN)))))
+                temp_dwt = ( net.m_lrn .* xcal(net, srs[rcv,snd], srm[rcv,snd]) .+ ((expand(avg_l_lrn[rcv], 2, size(srs[rcv,snd])[2])) .* xcal(net, srs[rcv,snd], transpose(repeat(transpose(avg_l[rcv]), sndN)))))
+                # DWt = Lrate * dwt
+                dwt[rcv,snd] = net.lrate .* temp_dwt
             end
         end
     end
