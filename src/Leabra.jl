@@ -723,18 +723,18 @@ function XCAL_learn(net::Network)
     ## update weights (with weight bounding)
     for rcv in 1:net.n_lays                
         DW = zeros(Float64, (net.n_lays,net.n_lays))
-        hit = false
+        isempty_DW = true
         for snd in 1:net.n_lays
             if net.connections[rcv,snd] > 0
-                if !hit
+                if isempty_DW
                     DW = dwt[rcv,snd]
                 else
                     DW = hcat(DW, dwt[rcv,snd]);
                 end
-                hit = true
+                isempty_DW = false
             end
         end
-        if hit #!isempty(DW)
+        if !isempty_DW
             # Here's the weight bounding part, as in the CCN book
             # TODO original: idxp = net.layers[rcv].wt .> 0
             # maybe correct: idxp = net.layers[rcv].dwt .> 0 ???
