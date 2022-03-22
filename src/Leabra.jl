@@ -82,13 +82,13 @@ mutable struct Unit # rate code approximation
     const avg_l_max::Float64  # = 1.5     # max value of avg_l
     const avg_l_min::Float64  # = 0.1     # min value of avg_l
     const avg_l_gain::Float64 # = 2.5     
-    # TODO it is very strange that v_rev_e is set to 1, so that v_m (at least i think) cannot grow larger than 1, but spike_thr is 1.2, so there will never be a spike right  don't know
+    
     const v_rev_e::Float64    # = 1.0     # excitatory reversal potential
     const v_rev_i::Float64    # = 0.25    # inhibitory reversal potential
     const v_rev_l::Float64    # = 0.3     # leak reversal potential
     const g_l::Float64        # = 0.1     # leak conductance
     const thr::Float64        # = 0.5     # normalized "rate threshold"
-    const spk_thr::Float64    # = 1.2     # normalized spike threshold  # TODO why is spk_thr 1.2  this is not a v value of -50mV...
+    const spk_thr::Float64    # = 1.2     # normalized spike threshold
     const vm_r::Float64       # = 0.3     # reset potential after spike
     const vm_gain::Float64    # = 0.04    # gain that voltage produces on adaptation
     const spike_gain::Float64 # = 0.00805 # effect of spikes on adaptation
@@ -115,7 +115,6 @@ function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
     
     ## Finding membrane potential
     #Inet = Ge *    (Erev.E  - Vm)    + Gbar.L * (Erev.L - Vm)    +    Gi * (Erev.I - Vm) + Noise
-    # i_net = u.g_e*(u.v_rev_e - u.v_m) + u.g_l*(u.v_rev_l - u.v_m) + g_i*(u.v_rev_i - u.v_m)
     i_e = u.g_e * (u.v_rev_e - u.v_m)
     i_i =   g_i * (u.v_rev_i - u.v_m)
     i_l = u.g_l * (u.v_rev_l - u.v_m)
@@ -126,8 +125,8 @@ function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
     i_e_h    = u.g_e * (u.v_rev_e - v_m_half)
     i_i_h    =   g_i * (u.v_rev_i - v_m_half)
     i_l_h    = u.g_l * (u.v_rev_l - v_m_half)
-    i_net_h  = i_e_h + i_i_h + i_l_h # condensed version: i_net_h = u.g_e*(u.v_rev_e - v_m_half) + u.g_l*(u.v_rev_l - v_m_half) + g_i*(u.v_rev_i - v_m_half)
-    u.v_m    = u.v_m   + u.integ_dt * u.vm_dt * (i_net_h - u.adapt)
+    i_net_h  = i_e_h + i_i_h + i_l_h 
+    u.v_m    = u.v_m + u.integ_dt * u.vm_dt * (i_net_h - u.adapt)
 
     # new rate coded version of i_net
     i_e_r = u.g_e * (u.v_rev_e - u.vm_eq)
@@ -145,9 +144,7 @@ function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
         u.spike = false
     end
 
-
     # finding instantaneous rate due to input
-    # connects to leabra/act.go line 207
     # if Act < XX1Params.VmActThr && Vm <= X11Params.Thr: 
     #   nwAct = NoisyXX1(Vm - Thr)
     # else
@@ -202,7 +199,7 @@ function updt_avg_l(u::Unit)
     u.avg_l = u.avg_l + u.avg_l_dt * (u.avg_l_gain * u.avg_m - u.avg_l)
     u.avg_l = max(u.avg_l, 0.2) #note does the 0.2 nullify u.avg_l_min?
     
-    # old code
+    # matlab code
     # if u.avg_m > 0.2
     #     u.avg_l = u.avg_l + u.avg_l_dt*(u.avg_l_max - u.avg_m)
     # else
@@ -369,15 +366,11 @@ Base.show(io::IO, lay::Layer) = print(io,
 
 function layer(dims::Tuple{Int64, Int64} = (1,1))
     N = dims[1]*dims[2]
-    # lay.units = unit.empty;  # so I can make the assignment below
-    # lay.units(lay.N,1) = unit; # creating all units
-    # # notice how the unit array is 1-D. The 2-D structure of the
-    # # layer doesn't have meaning in this part of the code 
-    
+
     units = [Unit() for i in 1:N]
     
-    acts_avg = 0.2 # should be the average but who knows
-    avg_act_n =  1.0 # should be the avg
+    acts_avg = 0.2
+    avg_act_n =  1.0
     pct_act_scale = 1/(avg_act_n + 2)
     fb = 0.5
 
@@ -398,13 +391,11 @@ function layer(dims::Tuple{Int64, Int64} = (1,1))
 end
 
 function acts_avg(lay::Layer)
-    # get the value of acts_avg, the mean of unit activities
     return mean(activities(lay))
 end
 
 function activities(lay::Layer)
-    # ## returns a vector with the activities of all units
-    # acts = Array{Float64, 1}(undef, lay.N)
+    # returns a vector with the activities of all units
     acts = zeros(Float64, lay.N)
     for (index,unit) in enumerate(lay.units)
         acts[index] = unit.act
@@ -413,23 +404,23 @@ function activities(lay::Layer)
 end
 
 function scaled_acts(lay::Layer)
-    # ## returns a vector with the scaled activities of all units
+    # returns a vector with the scaled activities of all units
     acts = Array{Float64, 1}(undef, lay.N)
     for (index,unit) in enumerate(lay.units)
         acts[index] = unit.act
     end
-    return lay.pct_act_scale .* acts #collect(transpose(acts))
+    return lay.pct_act_scale .* acts
 end
 
 function cycle(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64})
-    ## this function performs one Leabra cycle for the layer
-    #raw_inputs = An Ix1 matrix, where I is the total number of inputs
+    # this function performs one Leabra cycle for the layer
+    #raw_inputs = A vector of size I, where I is the total number of inputs
     #             from all layers. Each input has already been scaled
     #             by the pct_act_scale of its layer of origin and by
     #             the wt_scale_rel factor.
-    #ext_inputs = An Nx1 matrix denoting inputs that don't come
+    #ext_inputs = A vector of size N denoting inputs that don't come
     #             from another layer, where N is the number of
-    #             units in this layer. An empty matrix indicates
+    #             units in this layer. An empty vector indicates
     #             that there are no external inputs.
      
     ## obtaining the net inputs    
@@ -477,7 +468,6 @@ function clamped_cycle(lay::Layer, input::Array{Float64})
     # the variables as in the cycle function.
     # input = vector specifying the activities of all units
     for i = 1:lay.N  # parfor ?
-        # function clamped_cycle(u::Unit, input)
         clamped_cycle(lay.units[i], input[i])
     end
     lay.fbi = lay.fb * acts_avg(lay)
@@ -485,9 +475,6 @@ end
         
 function averages(lay::Layer)
     # Returns the s,m,l averages in the layer as vectors.
-    # Notice that the ss average is not returned, and avg_l is not
-    # updated before being returned.
-
     avg_s = [unit.avg_s for unit in lay.units]
     avg_m = [unit.avg_m for unit in lay.units]
     avg_l = [unit.avg_l for unit in lay.units]
@@ -565,7 +552,6 @@ function network(dim_layers, connections, w0)
     # w0 = w0 is a cell array. w0{i,j} is the weight matrix with the
     #      initial weights for the connections from layer j to i             
     
-    ## Initial test of argument dimensions
     n_lay = length(dim_layers)  # number of layers
     (nrc, ncc) = size(connections)
 
@@ -681,7 +667,6 @@ function XCAL_learn(net::Network)
         avg_l_lrn[lay] = net.avg_l_lrn_min .+ rel_avg_l(net.layers[lay]) .* (net.avg_l_lrn_max - net.avg_l_lrn_min)
     end
     
-    # link: def learning_rule(self, connection):
     ## For each connection matrix, calculate the intermediate vars.
     srs = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays)) # srs{i,j} = matrix of short-term averages
                                                                         # where the rows correspond to the
@@ -713,7 +698,6 @@ function XCAL_learn(net::Network)
         for snd in 1:net.n_lays
             if net.connections[rcv,snd] > 0
                 sndN = net.layers[snd].N
-                outer = (1, sndN)
                 # dwt = XCAL(srs, srm) + Recv.AvgLLrn * XCAL(srs, Recv.AvgL)
                 temp_dwt = ( net.m_lrn .* xcal(net, srs[rcv,snd], srm[rcv,snd]) .+ ((expand(avg_l_lrn[rcv], 2, size(srs[rcv,snd])[2])) .* xcal(net, srs[rcv,snd], transpose(repeat(transpose(avg_l[rcv]), sndN)))))
                 # DWt = Lrate * dwt
@@ -752,7 +736,7 @@ function XCAL_learn(net::Network)
     for lay in 1:net.n_lays
         net.layers[lay].ce_wt = 1 ./ (1 .+ (net.off .* (1 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
     end
-end # end XCAL_learn method 
+end
 
 function updt_long_avgs(net::Network)
     # updates the acts_p_avg and pct_act_scale variables for all layers. 
@@ -947,7 +931,7 @@ function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
         end
     end
     
-end # end of 'cycle' function
+end
 
 ######################################################################################################
 #  Testing
@@ -1062,7 +1046,7 @@ function test_network()
     @assert all(0.0 .< mean_errs) && all(mean_errs .< 1.0) "Mean Errors are out of range"
 end
 
-# export all
+# hacky export all
 for n in names(@__MODULE__; all=true)
     if Base.isidentifier(n) && n ∉ (Symbol(@__MODULE__), :eval, :include)
         @eval export $n
