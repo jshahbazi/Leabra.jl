@@ -1,18 +1,12 @@
 module Leabra
 
-using BenchmarkTools
-using ProfileVega
+######################################################################################################
+# Imports
+#
+
 using Distributions
-using DataStructures
-using JLD2
-using LinearAlgebra
-using Parameters
-using Plots
 using Random
-using Statistics
-
-import Base.Threads.@spawn
-
+using LinearAlgebra
 
 ######################################################################################################
 # Utility Functions
@@ -57,6 +51,25 @@ end
 # dtvm = rate constant that determines how fast membrance potential changes
 #       dtvm = vm_dt = ac.Dt.VmDt = v_dt
 
+# Summary of Neuron Equations and Normalized Parameters
+# Table 2.1 From CCN 4th Ed.
+# Parameter     Bio Val     Norm Val
+# Time	        0.001 sec	1ms 
+# Current	    1x10−8 A 	10 nA 
+# Capacitance   1x10−12 F 	1pF 
+# GbarL (leak)  10 nS	    0.1
+# GbarE (excite)100 nS 	    1
+# ErevI (inhib)	-75mV 	    0.25
+# θ (Thr)	     -50mV	    0.5
+# Voltage 	    100mV	    0..2
+# Conductance 	1x10−9 S	1 nS
+# C (memb cap) 	281 pF	    Dt = .355
+# GBarI (inhib) 100 nS	    1
+# ErevL (leak) 	-70mV	    0.3
+# ErevE (excite)0mV	        1
+# SpikeThr	    20mV	    1.2
+
+
 mutable struct Unit # rate code approximation
     act::Float64        # = 0.2           # "firing rate" of the unit
     avg_ss::Float64     # = act           # super-short time-scale activation average
@@ -70,6 +83,8 @@ mutable struct Unit # rate code approximation
     spike::Bool         # = false         # a flag that indicates spiking threshold was crossed
 
     # constants
+    # const g_bar_e::Float64     # = 0.3
+    # const g_bar_l::Float64     # = 0.3
     const g_e_dt::Float64     # = 1/1.4   # time step constant for update of 'g_e'
     const integ_dt::Float64   # = 1.0     # time step constant for integration of cycle dynamics
     const vm_dt::Float64      # = 1/3.3   # time step constant for membrane potential
@@ -83,10 +98,11 @@ mutable struct Unit # rate code approximation
     const avg_l_min::Float64  # = 0.1     # min value of avg_l
     const avg_l_gain::Float64 # = 2.5     
     
-    const v_rev_e::Float64    # = 1.0     # excitatory reversal potential
-    const v_rev_i::Float64    # = 0.25    # inhibitory reversal potential
-    const v_rev_l::Float64    # = 0.3     # leak reversal potential
-    const g_l::Float64        # = 0.1     # leak conductance
+    const e_rev_e::Float64    # = 1.0     # excitatory reversal potential
+    const e_rev_i::Float64    # = 0.25    # inhibitory reversal potential
+    const e_rev_l::Float64    # = 0.3     # leak reversal potential
+    const g_bar_l::Float64    # = 0.1     # leak conductance
+    const g_bar_e::Float64    # = 1.0     # excitatory conductance
     const thr::Float64        # = 0.5     # normalized "rate threshold"
     const spk_thr::Float64    # = 1.2     # normalized spike threshold
     const vm_r::Float64       # = 0.3     # reset potential after spike
@@ -96,7 +112,7 @@ mutable struct Unit # rate code approximation
     
     function Unit()
         return new( 0.2, 0.2, 0.2, 0.2, 0.1, 0.0, 0.3, 0.3, 0.0, false,
-                    1/1.4, 1.0, 1/3.3, 1/2.5, 1/144, 0.5, 0.5, 0.1, 0.1, 1.5, 0.1, 2.5, 1.0, 0.25, 0.3, 0.1, 0.5, 1.2, 0.3, 0.04, 0.00805, 0.2)
+                    1/1.4, 1.0, 1/3.3, 1/2.5, 1/144, 0.5, 0.5, 0.1, 0.1, 1.5, 0.1, 2.5, 1.0, 0.25, 0.3, 0.1, 1.0, 0.5, 1.2, 0.3, 0.04, 0.00805, 0.2)
      end    
 end
     
@@ -115,24 +131,24 @@ function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
     
     ## Finding membrane potential
     #Inet = Ge *    (Erev.E  - Vm)    + Gbar.L * (Erev.L - Vm)    +    Gi * (Erev.I - Vm) + Noise
-    i_e = u.g_e * (u.v_rev_e - u.v_m)
-    i_i =   g_i * (u.v_rev_i - u.v_m)
-    i_l = u.g_l * (u.v_rev_l - u.v_m)
-    i_net = i_e + i_i + i_l #+ rand() # noise?
+    i_e = u.g_e     * (u.e_rev_e - u.v_m)
+    i_l = u.g_bar_l * (u.e_rev_l - u.v_m)    
+    i_i =   g_i     * (u.e_rev_i - u.v_m)
+    i_net = i_e + i_l + i_i #+ rand() # noise?
     
     # almost half-step method for updating v_m (adapt doesn't half step)
     v_m_half = u.v_m + 0.5 * u.integ_dt * u.vm_dt * (i_net - u.adapt)
-    i_e_h    = u.g_e * (u.v_rev_e - v_m_half)
-    i_i_h    =   g_i * (u.v_rev_i - v_m_half)
-    i_l_h    = u.g_l * (u.v_rev_l - v_m_half)
-    i_net_h  = i_e_h + i_i_h + i_l_h 
+    i_e_h    = u.g_e     * (u.e_rev_e - v_m_half)
+    i_l_h    = u.g_bar_l * (u.e_rev_l - v_m_half)    
+    i_i_h    =   g_i     * (u.e_rev_i - v_m_half)
+    i_net_h  = i_e_h + i_l_h + i_i_h
     u.v_m    = u.v_m + u.integ_dt * u.vm_dt * (i_net_h - u.adapt)
 
     # new rate coded version of i_net
-    i_e_r = u.g_e * (u.v_rev_e - u.vm_eq)
-    i_i_r =   g_i * (u.v_rev_i - u.vm_eq)
-    i_l_r = u.g_l * (u.v_rev_l - u.vm_eq)
-    i_net_r = i_e_r + i_i_r + i_l_r 
+    i_e_r = u.g_e     * (u.e_rev_e - u.vm_eq)
+    i_l_r = u.g_bar_l * (u.e_rev_l - u.vm_eq)    
+    i_i_r =   g_i     * (u.e_rev_i - u.vm_eq)
+    i_net_r = i_e_r + i_l_r + i_i_r
     u.vm_eq = u.vm_eq + u.integ_dt * u.vm_dt * (i_net_r - u.adapt)    
     
     # finding whether there's an action potential
@@ -146,18 +162,16 @@ function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
 
     # finding instantaneous rate due to input
     # if Act < XX1Params.VmActThr && Vm <= X11Params.Thr: 
-    #   nwAct = NoisyXX1(Vm - Thr)
-    # else
-    #   nwAct = NoisyXX1(Ge * Gbar.E - geThr)
     if u.vm_eq <= u.thr
+        # nwAct = NoisyXX1(Vm - Thr)
         nw_act = nxx1(u.vm_eq - u.thr)[1]
     else
         ## Finding activation
         # finding threshold excitatory conductance
         # geThr = (Gi * (Erev.I -  Thr)   + Gbar.L * (Erev.L - Thr) / (Thr - Erev.E)
-        # geΘ = gi(Ei −Θ)+gl(El −Θ)/Θ-Ee
-        g_e_thr = (g_i * (u.v_rev_i - u.thr) + u.g_l * (u.v_rev_l - u.thr) - u.adapt) / (u.thr - u.v_rev_e)
-        nw_act = nxx1(u.g_e - g_e_thr)[1]
+        g_e_thr = (g_i * (u.e_rev_i - u.thr) + u.g_bar_l * (u.e_rev_l - u.thr) - u.adapt) / (u.thr - u.e_rev_e)
+        # nwAct = NoisyXX1(Ge * Gbar.E - geThr)
+        nw_act = nxx1(u.g_e * u.g_bar_e - g_e_thr)[1]
     end
 
     # update activity
@@ -168,7 +182,7 @@ function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
 
 
     ## Updating adaptation current
-    u.adapt = u.adapt + u.integ_dt * (u.adapt_dt * (u.vm_gain * (u.v_m - u.v_rev_l)  - u.adapt) + u.spike * u.spike_gain)
+    u.adapt = u.adapt + u.integ_dt * (u.adapt_dt * (u.vm_gain * (u.v_m - u.e_rev_l)  - u.adapt) + u.spike * u.spike_gain)
           
     ## updating averages
     u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act - u.avg_ss)
@@ -933,120 +947,12 @@ function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     
 end
 
+
+
+
 ######################################################################################################
-#  Testing
-#
+# Hacky Export All Function 
 
-function test_network()
-    # # 1.1) Set the dimensions of the layers
-    dim_lays = [(5,5), (10, 10), (5, 5)]
-    # # 1.2) Specify connectivity between layers
-    connections = [0  0  0
-                1  0 .2
-                0  1  0]
-    #    # connections(i,j) = c means that layer i receives connections from j,
-    #    # and that they have a relative strength c. In this case, feedback
-    #    # connections are 5 times weaker. The relative weight scale of layer i
-    #    # comes from the non-zero entries of row i.   
-    #    # The network constructor will normalize this matrix so that if there
-    #    # are non-zero entries in a row, they add to 1.
-    n_lays = length(dim_lays)
-    n_units = zeros(Int64,1,n_lays) ## number of units in each layer
-
-    for i in 1:n_lays
-        n_units[i] = dim_lays[i][1] * dim_lays[i][2]
-    end
-
-    w0 = Array{Any}(undef, (n_lays,n_lays))
-    for rcv in 1:n_lays
-        for snd in 1:n_lays
-            if connections[rcv,snd] > 0
-                w0[rcv,snd] = 0.3 .+ 0.4*rand(Uniform(),n_units[rcv],n_units[snd])
-            else
-                w0[rcv,snd] = 0.0
-            end
-        end
-    end
-
-    net = network(dim_lays, connections, w0)
-
-    # ## 4) Let's create some inputs
-    # n_inputs = 15  # number of input-output patterns to associate
-    # patterns = Array{Matrix{Float64}, 2}(undef, (n_inputs,2)) # patterns{i,1} is the i-th input pattern, and 
-    #                                                           # patterns{i,2} is the i-th output pattern.
-    # # This will assume that layers 1 and 3 are input and output respectively.
-    # # Patterns will be binary.
-    # prop = 0.3 # the proportion of active units in the patterns
-    # for i in 1:n_inputs
-    #     # rand(Uniform(),n_units[rcv],n_units[snd])
-    #     patterns[i,1] = round.(2 .* prop .* rand(Uniform(), 1, n_units[1]))  # either 0 or 1
-    #     patterns[i,2] = round.(2 .* prop .* rand(Uniform(), 1, n_units[3]))
-    #     patterns[i,1] = 0.01 .+ 0.95 .* patterns[i,1]  # either 0.01 or 0.96
-    #     patterns[i,2] = 0.01 .+ 0.95 .* patterns[i,2]
-    # end
-
-
-    n_inputs = 5  # number of input-output patterns to associate
-    patterns = Array{Matrix{Float64}, 2}(undef, (n_inputs,2)) # patterns{i,1} is the i-th input pattern, and 
-                                                              # patterns{i,2} is the i-th output pattern.
-    for i in 1:n_inputs # outputs are the same as inputs (an autoassociator)
-        patterns[i,1] = rand(Binomial(1,0.5),(n_inputs,n_inputs))
-        patterns[i,2] = patterns[i,1]
-    end
-
-    ## 5) Train the network
-
-    # Specify parameters for training
-    n_epochs = 10  # number of epochs. All input patterns are presented in one.
-    n_trials = n_inputs # number of trials. One input pattern per trial.
-    n_minus = 50  # number of minus cycles per trial.
-    n_plus = 25 # number of plus cycles per trial.
-    lrate_sched = collect(LinRange(0.8, 0.2, n_epochs))
-
-    errors = zeros(n_epochs,n_trials) # cosine error for each pattern
-
-    for epoch in 1:n_epochs
-        order = randperm(n_trials) # order of presentation of inputs this epoch
-        net.lrate = lrate_sched[epoch] # learning rate for this epoch
-        for trial in 1:n_trials
-            reset(net)  # randomize the acts for all units
-            pat = order[trial]  # input to be presented this trial
-
-            #++++++ MINUS PHASE +++++++
-            inputs::Vector{Array{Float64}} = [patterns[pat, 1], [], []]
-            for minus in 1:n_minus # minus cycles: layer 1 is clamped
-                cycle(net, inputs, true)
-            end
-            outs = (activities(net.layers[3])) # saving the output for testing
-
-            #+++++++ PLUS PHASE +++++++
-            inputs = [patterns[pat, 1], [], patterns[pat, 2]]
-            for plus in 1:n_plus # plus cycles: layers 1 and 3 are clamped
-                cycle(net, inputs, true)
-            end
-            updt_long_avgs(net) # update averages used for net input scaling                            
-
-            #+++++++ LEARNING +++++++
-            XCAL_learn(net)  # updates the avg_l vars and applies XCAL learning
-            
-            if mod(trial, 5) == 0 # display a message every X trials
-                println("Trial $trial finished")
-            end        
-            
-            #+++++++ ERRORS +++++++
-            # Only the cosine error is used here
-            errors[epoch, pat] = 1 - sum(outs .* transpose(patterns[pat, 2][:])) / ( norm(outs) * norm(transpose(patterns[pat, 2][:])) )                    
-        end
-
-        println("Epoch $epoch finished")
-    end
-
-    mean_errs = mean(errors, dims=2)
-    println("Mean Errors: $mean_errs")
-    @assert all(0.0 .< mean_errs) && all(mean_errs .< 1.0) "Mean Errors are out of range"
-end
-
-# hacky export all
 for n in names(@__MODULE__; all=true)
     if Base.isidentifier(n) && n ∉ (Symbol(@__MODULE__), :eval, :include)
         @eval export $n
