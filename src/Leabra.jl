@@ -162,7 +162,7 @@ function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
 
     # finding instantaneous rate due to input
     # if Act < XX1Params.VmActThr && Vm <= X11Params.Thr: 
-    if u.vm_eq <= u.thr
+    if u.act < nxx1p.VmActThr && u.vm_eq <= u.thr
         # nwAct = NoisyXX1(Vm - Thr)
         nw_act = nxx1(u.vm_eq - u.thr)[1]
     else
