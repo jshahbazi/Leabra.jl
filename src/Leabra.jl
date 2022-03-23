@@ -36,8 +36,6 @@ end
 # Unit Functions
 #
 
-# gi Ei 0 vm Ee ge
-
 # g = conductance
 #       ge = excitatory conductance - net excitatory input to the neuron
 #       gi = inhibitory conductance - net inhibitory input to the neuron
@@ -721,7 +719,8 @@ function XCAL_learn(net::Network)
     end
 
     ## update weights (with weight bounding)
-    for rcv in 1:net.n_lays                
+    for rcv in 1:net.n_lays
+        # DWt = 0
         DW = zeros(Float64, (net.n_lays,net.n_lays))
         isempty_DW = true
         for snd in 1:net.n_lays
@@ -736,11 +735,10 @@ function XCAL_learn(net::Network)
         end
         if !isempty_DW
             # Here's the weight bounding part, as in the CCN book
-            # TODO original: idxp = net.layers[rcv].wt .> 0
-            # maybe correct: idxp = net.layers[rcv].dwt .> 0 ???
+            # DWt *= (DWt > 0) ? Wb.Inc * (1-LWt) : Wb.Dec * LWt
+            # LWt += DWt
             idxp = net.layers[rcv].wt .> 0
-            idxn = .!idxp # maps ! function onto the BitArray
-            
+            idxn = .!idxp # maps the "!" function onto the BitArray
             net.layers[rcv].wt[idxp] = net.layers[rcv].wt[idxp] .+ (1 .- net.layers[rcv].wt[idxp]) .* DW[idxp]
             net.layers[rcv].wt[idxn] = net.layers[rcv].wt[idxn] .+ net.layers[rcv].wt[idxn] .* DW[idxn]
         end
@@ -748,6 +746,8 @@ function XCAL_learn(net::Network)
     
     ## set the contrast-enhanced version of the weights
     for lay in 1:net.n_lays
+        # Wt = SIG(LWt)
+        # SIG(w) = 1 / (1 + (Off * (1-w)/w)^Gain)
         net.layers[lay].ce_wt = 1 ./ (1 .+ (net.off .* (1 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
     end
 end
