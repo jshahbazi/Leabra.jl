@@ -1,4 +1,5 @@
 using Test
+
 using Distributions
 using Random
 using LinearAlgebra
@@ -70,6 +71,7 @@ include("../src/Leabra.jl")
             for snd in 1:n_lays
                 if connections[rcv,snd] > 0
                     w0[rcv,snd] = 0.3 .+ 0.4*rand(Uniform(),n_units[rcv],n_units[snd])
+                    # w0[rcv,snd] = rand(Uniform(),n_units[rcv],n_units[snd])
                 else
                     w0[rcv,snd] = 0.0
                 end
