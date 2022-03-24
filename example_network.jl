@@ -1,6 +1,7 @@
 using Distributions
 using Random
 using LinearAlgebra
+using Plots
 
 include("./src/Leabra.jl")
 
@@ -98,5 +99,5 @@ errors = train_network!(net, inputs, n_epochs, n_trials)
 
 mean_errs = mean(errors, dims=2);
 println(mean_errs)
-
+plot(mean_errs)
 
