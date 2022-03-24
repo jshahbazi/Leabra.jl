@@ -951,7 +951,112 @@ end
 
 
 ######################################################################################################
+# Higher level functions for building networks
+#
+
+function build_network(dim_lays, connections)
+    n_lays = length(dim_lays)
+    n_units = zeros(Int64,1,n_lays)
+    for i in 1:n_lays
+        n_units[i] = dim_lays[i][1] * dim_lays[i][2]
+    end
+    w0 = Array{Any}(undef, (n_lays,n_lays))
+    for rcv in 1:n_lays
+        for snd in 1:n_lays
+            if connections[rcv,snd] > 0
+                w0[rcv,snd] = 0.3 .+ 0.4*rand(Uniform(),n_units[rcv],n_units[snd])
+                # w0[rcv,snd] = rand(Uniform(),n_units[rcv],n_units[snd])
+            else
+                w0[rcv,snd] = 0.0
+            end
+        end
+    end
+    net = Leabra.network(dim_lays, connections, w0)
+
+    return net
+end
+
+
+function create_random_inputs(n_inputs)
+    inputs = Array{Array{Float64}, 2}(undef, (n_inputs,2))
+    for i in 1:n_inputs
+        inputs[i,1] = rand(Binomial(1,0.5),(n_inputs,n_inputs))
+        inputs[i,2] = inputs[i,1];
+    end
+
+    return inputs
+end
+
+function clamp_data(data, num_layers, layers_to_clamp, selected_data)
+    resulting_data = Vector{Array{Float64}}(undef, num_layers)
+    output_layer::Bool = false
+
+    for layer in 1:num_layers
+        if layer == num_layers
+            output_layer = true
+        end
+
+        if layer in layers_to_clamp
+            if output_layer
+                resulting_data[layer] = data[selected_data,2]
+            else
+                resulting_data[layer] = data[selected_data,1]
+            end
+        else
+            resulting_data[layer] = []
+        end
+    end
+
+    return resulting_data
+end
+
+function train_network!(net, inputs, n_epochs, n_trials)
+    n_minus = 50 # number of minus cycles per trial
+    n_plus = 25  # number of plus cycles per trial
+
+    lrate_sched = collect(LinRange(0.8, 0.2, n_epochs))
+    println(lrate_sched)
+    errors = zeros(n_epochs,n_trials)
+    for epoch in 1:n_epochs
+        randomized_input = randperm(n_trials)
+        net.lrate = lrate_sched[epoch]
+        for trial in 1:n_trials
+            Leabra.reset(net)
+            selected_data = randomized_input[trial] # pick a random set of data
+
+            # Minus phase
+            # Clamp input layer
+            sel_data_array = clamp_data(inputs, net.n_lays, [1], selected_data)
+            for minus in 1:n_minus
+                Leabra.cycle(net, sel_data_array, true)
+            end
+            outs = (Leabra.activities(net.layers[net.n_lays]))
+
+            # Plus phase
+            # Clamp input and output layer
+            sel_data_array = clamp_data(inputs, net.n_lays, [1,net.n_lays], selected_data)
+            for plus in 1:n_plus
+                Leabra.cycle(net, sel_data_array, true);
+            end
+            Leabra.updt_long_avgs(net)
+
+            # Learning
+            Leabra.XCAL_learn(net)
+            
+            # Errors
+            errors[epoch, selected_data] = 1 - sum(outs .* transpose(inputs[selected_data, 2][:])) / ( norm(outs) * norm(transpose(inputs[selected_data, 2][:])) );                    
+        end
+    end
+
+    return errors
+end
+
+
+
+
+######################################################################################################
 # Hacky Export All Function 
+#
 
 for n in names(@__MODULE__; all=true)
     if Base.isidentifier(n) && n ∉ (Symbol(@__MODULE__), :eval, :include)
