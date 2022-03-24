@@ -1015,7 +1015,6 @@ function train_network!(net, inputs, n_epochs, n_trials)
     n_plus = 25  # number of plus cycles per trial
 
     lrate_sched = collect(LinRange(0.8, 0.2, n_epochs))
-    println(lrate_sched)
     errors = zeros(n_epochs,n_trials)
     for epoch in 1:n_epochs
         randomized_input = randperm(n_trials)
