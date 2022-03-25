@@ -27,13 +27,14 @@ connections = [0  0  0;
 net = Leabra.build_network(dim_lays, connections)
 
 n_inputs = 5
-# this just creates random patterns
-inputs = Leabra.create_random_inputs(n_inputs)
+
+# inputs = Leabra.create_random_inputs(n_inputs) # this just creates random patterns for any size input/output layers
+inputs = Leabra.create_patterns(n_inputs) # assumes a 5x5 input and output layer
 
 n_epochs = 20
 errors = Leabra.train_network!(net, inputs, n_epochs)
 
 mean_errs = mean(errors, dims=2);
-println(mean_errs)
+println("Mean errors: $mean_errs")
 plot(mean_errs)
 ylims!((0.0,1.0))
