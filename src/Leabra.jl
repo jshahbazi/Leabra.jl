@@ -1010,9 +1010,10 @@ function clamp_data(data, num_layers, layers_to_clamp, selected_data)
     return resulting_data
 end
 
-function train_network!(net, inputs, n_epochs, n_trials)
+function train_network!(net, inputs, n_epochs)
     n_minus = 50 # number of minus cycles per trial
     n_plus = 25  # number of plus cycles per trial
+    n_trials = size(inputs)[1]
 
     lrate_sched = collect(LinRange(0.8, 0.2, n_epochs))
     errors = zeros(n_epochs,n_trials)
