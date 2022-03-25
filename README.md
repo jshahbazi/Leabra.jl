@@ -19,7 +19,7 @@ It will install the following libraries into the project environment
 - Plots
 - Random
 
-Steps to run the example:
+Ways to run the example:
 
 - Clone this repo into a directory via `git clone https://github.com/jshahbazi/Leabra.jl`
 - Run `cd Leabra.jl`
@@ -30,6 +30,8 @@ If you want to view the plots, you can just copy and paste the code into a Jupyt
 
 - Run `julia --project=.`
 - From the `julia>` prompt, run: `include("example_network.jl")`
+
+Or, just use the *example_notebook.ipynb*.  It has the code from *example_network.jl* in an easy-to-use format.
 
 # Citation
 
