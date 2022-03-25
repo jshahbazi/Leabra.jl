@@ -987,6 +987,21 @@ function create_random_inputs(n_inputs)
     return inputs
 end
 
+function create_patterns(n_inputs)
+    inputs = Array{Array{Float64}, 2}(undef, (n_inputs,2))
+    inputs[1,1] = repeat([0 0 1 0 0],5,1);   # vertical line
+    inputs[2,1] = [1 1 1 1 1;zeros(4,5)];    # horizontal line
+    inputs[3,1] = [0 0 0 0 1;0 0 0 1 0;0 0 1 0 0;0 1 0 0 0; 1 0 0 0 0]; # diagonal 1
+    inputs[4,1] = reverse(inputs[3,1], dims=2)
+    inputs[5,1] =  1.0 .* (!=(0.0).(inputs[3,1]) .|| !=(0.0).(inputs[4,1]))   # two diagonals
+    for i in 1:n_inputs # outputs are the same as inputs (an autoassociator)
+        inputs[i,1] = 0.01 .+ 0.98 .* inputs[i,1];
+        inputs[i,2] = inputs[i,1];
+    end
+    return inputs
+end
+
+
 function clamp_data(data, num_layers, layers_to_clamp, selected_data)
     resulting_data = Vector{Array{Float64}}(undef, num_layers)
     output_layer::Bool = false
