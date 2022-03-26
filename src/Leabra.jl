@@ -676,7 +676,7 @@ function XCAL_learn(net::Network)
     end
     
     ## For each connection matrix, calculate the intermediate vars.
-    srs = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays)) # srs{i,j} = matrix of short-term averages
+    srs = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays)) # srs[i,j] = matrix of short-term averages
                                                                         # where the rows correspond to the
                                                                         # units of the receiving layer, columns
                                                                         # to units of the sending layer.
@@ -700,7 +700,7 @@ function XCAL_learn(net::Network)
     end
     
     ## calculate the weight changes
-    dwt = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays)) # dwt{i,j} is the matrix of weight changes
+    dwt = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays)) # dwt[i,j] is the matrix of weight changes
                                                                       # for the weights from layer j to i
     for rcv in 1:net.n_lays
         for snd in 1:net.n_lays
@@ -786,7 +786,6 @@ function xcal(net::Network, x, th)
     #     return (-x * ((1 - net.d_rev)/net.d_rev))
     # end
 
-
     f = zeros(size(x))
     temp = x .> net.d_thr
     temp2 = x .< (net.d_rev * th)
@@ -868,7 +867,7 @@ end
 
 function get_weights(netnet::Network)
     # This function returns a 2D cell array w.
-    # w{rcv,snd} contains the weight matrix for the projections from
+    # w[rcv,snd] contains the weight matrix for the projections from
     # layer snd to layer rcv.
     w = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays))
     for rcv in 1:net.n_lays
@@ -886,7 +885,7 @@ end
 
 function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     # this function calls the cycle method for all layers.
-    # inputs = a cell array. inputs{i} is  a matrix that for layer i
+    # inputs = a cell array. inputs[i] is  a matrix that for layer i
     #          specifies the external input to each of its units.
     #          An empty matrix denotes no input to that layer.
     # clamp_inp = a binary flag. 1 -> layers are clamped to their
