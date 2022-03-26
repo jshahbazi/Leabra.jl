@@ -106,7 +106,7 @@ mutable struct Unit # rate code approximation
     const vm_r::Float64       # = 0.3     # reset potential after spike
     const vm_gain::Float64    # = 0.04    # gain that voltage produces on adaptation
     const spike_gain::Float64 # = 0.00805 # effect of spikes on adaptation
-    const l_up_inc::Float64   # = 0.2     # increase in avg_l if avg_m has been 'large'   # TODO never used  # maybe: (increase in avg_l if avg_m has been "large")
+    const l_up_inc::Float64   # = 0.2     # increase in avg_l if avg_m has been 'large'   # TODO never used
     
     function Unit()
         return new( 0.2, 0.2, 0.2, 0.2, 0.1, 0.0, 0.3, 0.3, 0.0, false,
@@ -639,7 +639,6 @@ function network(dim_layers, connections, w0)
     
     # set the contrast-enhanced version of the weights
     for lay in 1:n_lay
-        # TODO check book version of contrast-enhanced weights: 1 / (1 + (self$weights) / (off * (1 - self$weights)) ^ -gain)
         net.layers[lay].ce_wt = 1 ./ (1 .+ (net.off * (1 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
     end
 
