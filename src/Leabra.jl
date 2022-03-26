@@ -543,7 +543,6 @@ mutable struct Network
     n_units::Int64
     lrate::Float64
     
-    # TODO add type of layer for avg_l_lrn, it is 0.0004 on default, but 0 for output layers (they do not need self-organized learning).
     const avg_l_lrn_max::Float64    # = 0.01    # max amount of "BCM" learning in XCAL
     const avg_l_lrn_min::Float64    # = 0.0     # min amount of "BCM" learning in XCAL
     const lrn_m::Float64            # = 0.1     # proportion of medium to short term avgs. in XCAL
