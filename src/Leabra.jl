@@ -649,9 +649,7 @@ function XCAL_learn(net::Network)
     # XCAL_learn() applies the XCAL learning equations in order to
     # modify the weights in the network. This is typically done at
     # the end of a plus phase. The equations used come from:
-    # https://grey.colorado.edu/ccnlab/index.php/Leabra_Hog_Prob_Fix#Adaptive_Contrast_Impl
-    # Soft weight bounding and contrast enhancememnt are as in:
-    # https://grey.colorado.edu/emergent/index.php/Leabra
+    # https://github.com/emer/leabra
     
     ## updating the long-term averages
     for lay in 1:net.n_lays
