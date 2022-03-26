@@ -204,7 +204,7 @@ end
 
 
 function updt_avg_l(u::Unit)
-    # This fuction updates the long-term average 'avg_l' 
+    # This function updates the long-term average 'avg_l' 
 
     # AvgL += (1 / Tau) * (Gain * AvgM - AvgL); AvgL = MAX(AvgL, Min)
     # Tau = 10, Gain = 2.5 (this is a key param -- best value can be lower or higher) Min = .2
