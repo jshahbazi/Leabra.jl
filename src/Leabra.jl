@@ -555,12 +555,12 @@ end
 
 function network(dim_layers, connections, w0)
     # constructor to the network class.
-    # dim_layers = 1-D cell array. dim_layers{i} is a vector [j,k], 
+    # dim_layers = 1-D array. dim_layers[i] is a vector [j,k], 
     #              where j is the number of rows in layer i, and k is
     #              the number of columns in layer i.
     # connections = a 2D array. If layer j sends projections to 
     #               layer i, then connections[i,j] = c > 0; 0 otherwise
-    # w0 = w0 is a cell array. w0{i,j} is the weight matrix with the
+    # w0 = w0 is an array. w0[i,j] is the weight matrix with the
     #      initial weights for the connections from layer j to i             
     
     n_lay = length(dim_layers)  # number of layers
@@ -684,7 +684,7 @@ function XCAL_learn(net::Network)
     for rcv in 1:net.n_lays
         for snd in rcv:net.n_lays
             # notice we only calculate the 'upper triangle' of the
-            # cell arrays because of symmetry
+            # arrays because of symmetry
             if net.connections[rcv,snd] > 0 || net.connections[snd,rcv] > 0
                 # srs = Send.AvgSLrn * Recv.AvgSLrn
                 srs[rcv,snd] = avg_s_eff[rcv] * transpose(avg_s_eff[snd])
@@ -807,8 +807,8 @@ function reset(net::Network)
 end
 
 function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
-    # This function receives a cell array w, which is like the cell
-    # array w0 in the constructor: w{i,j} is the weight matrix with
+    # This function receives an array w, which is like the
+    # array w0 in the constructor: w[i,j] is the weight matrix with
     # the initial weights for the connections from layer j to layer
     # i. The weights are set to the values of w.
     # This whole function is a slightly modified copypasta of the
@@ -866,7 +866,7 @@ function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
 end
 
 function get_weights(netnet::Network)
-    # This function returns a 2D cell array w.
+    # This function returns a 2D array w.
     # w[rcv,snd] contains the weight matrix for the projections from
     # layer snd to layer rcv.
     w = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays))
@@ -885,7 +885,7 @@ end
 
 function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     # this function calls the cycle method for all layers.
-    # inputs = a cell array. inputs[i] is  a matrix that for layer i
+    # inputs[i] is  a matrix that for layer i
     #          specifies the external input to each of its units.
     #          An empty matrix denotes no input to that layer.
     # clamp_inp = a binary flag. 1 -> layers are clamped to their
