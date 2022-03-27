@@ -129,24 +129,24 @@ function cycle!(u::Unit, g_e_raw::Float64, g_i::Float64)
     
     ## Finding membrane potential
     #Inet = Ge *    (Erev.E  - Vm)    + Gbar.L * (Erev.L - Vm)    +    Gi * (Erev.I - Vm) + Noise
-    i_e = u.g_e     * (u.e_rev_e - u.v_m)
-    i_l = u.g_bar_l * (u.e_rev_l - u.v_m)    
-    i_i =   g_i     * (u.e_rev_i - u.v_m)
-    i_net = i_e + i_l + i_i #+ rand() # noise?
+    i_e::Float64 = u.g_e     * (u.e_rev_e - u.v_m)
+    i_l::Float64 = u.g_bar_l * (u.e_rev_l - u.v_m)    
+    i_i::Float64 =   g_i     * (u.e_rev_i - u.v_m)
+    i_net::Float64 = i_e + i_l + i_i #+ rand() # noise?
     
     # almost half-step method for updating v_m (adapt doesn't half step)
-    v_m_half = u.v_m + 0.5 * u.integ_dt * u.vm_dt * (i_net - u.adapt)
-    i_e_h    = u.g_e     * (u.e_rev_e - v_m_half)
-    i_l_h    = u.g_bar_l * (u.e_rev_l - v_m_half)    
-    i_i_h    =   g_i     * (u.e_rev_i - v_m_half)
-    i_net_h  = i_e_h + i_l_h + i_i_h
+    v_m_half::Float64 = u.v_m + 0.5 * u.integ_dt * u.vm_dt * (i_net - u.adapt)
+    i_e_h::Float64    = u.g_e     * (u.e_rev_e - v_m_half)
+    i_l_h::Float64    = u.g_bar_l * (u.e_rev_l - v_m_half)    
+    i_i_h::Float64    =   g_i     * (u.e_rev_i - v_m_half)
+    i_net_h::Float64  = i_e_h + i_l_h + i_i_h
     u.v_m    = u.v_m + u.integ_dt * u.vm_dt * (i_net_h - u.adapt)
 
     # new rate coded version of i_net
-    i_e_r = u.g_e     * (u.e_rev_e - u.vm_eq)
-    i_l_r = u.g_bar_l * (u.e_rev_l - u.vm_eq)    
-    i_i_r =   g_i     * (u.e_rev_i - u.vm_eq)
-    i_net_r = i_e_r + i_l_r + i_i_r
+    i_e_r::Float64 = u.g_e     * (u.e_rev_e - u.vm_eq)
+    i_l_r::Float64 = u.g_bar_l * (u.e_rev_l - u.vm_eq)    
+    i_i_r::Float64 =   g_i     * (u.e_rev_i - u.vm_eq)
+    i_net_r::Float64 = i_e_r + i_l_r + i_i_r
     u.vm_eq = u.vm_eq + u.integ_dt * u.vm_dt * (i_net_r - u.adapt)    
     
     # finding whether there's an action potential
@@ -162,12 +162,12 @@ function cycle!(u::Unit, g_e_raw::Float64, g_i::Float64)
     # if Act < XX1Params.VmActThr && Vm <= X11Params.Thr: 
     if u.act < nxx1p.VmActThr && u.vm_eq <= u.thr
         # nwAct = NoisyXX1(Vm - Thr)
-        nw_act = nxx1(u.vm_eq - u.thr)[1]
+        nw_act::Float64 = nxx1(u.vm_eq - u.thr)[1]
     else
         ## Finding activation
         # finding threshold excitatory conductance
         # geThr = (Gi * (Erev.I -  Thr)   + Gbar.L * (Erev.L - Thr) / (Thr - Erev.E)
-        g_e_thr = (g_i * (u.e_rev_i - u.thr) + u.g_bar_l * (u.e_rev_l - u.thr) - u.adapt) / (u.thr - u.e_rev_e)
+        g_e_thr::Float64 = (g_i * (u.e_rev_i - u.thr) + u.g_bar_l * (u.e_rev_l - u.thr) - u.adapt) / (u.thr - u.e_rev_e)
         # nwAct = NoisyXX1(Ge * Gbar.E - geThr)
         nw_act = nxx1(u.g_e * u.g_bar_e - g_e_thr)[1]
     end
@@ -183,9 +183,9 @@ function cycle!(u::Unit, g_e_raw::Float64, g_i::Float64)
     u.adapt = u.adapt + u.integ_dt * (u.adapt_dt * (u.vm_gain * (u.v_m - u.e_rev_l)  - u.adapt) + u.spike * u.spike_gain)
           
     ## updating averages
-    u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act - u.avg_ss)
-    u.avg_s = u.avg_s + u.integ_dt * u.s_dt * (u.avg_ss - u.avg_s)
-    u.avg_m = u.avg_m + u.integ_dt * u.m_dt * (u.avg_s - u.avg_m) 
+    u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act    - u.avg_ss)
+    u.avg_s  =  u.avg_s + u.integ_dt *  u.s_dt * (u.avg_ss - u.avg_s)
+    u.avg_m  =  u.avg_m + u.integ_dt *  u.m_dt * (u.avg_s  - u.avg_m) 
 end
 
 function clamped_cycle!(u::Unit, input)
@@ -232,8 +232,8 @@ function reset!(u::Unit, random::Bool=false)
     u.avg_s = u.act
     u.avg_m = u.act
     u.avg_l = u.act
-    u.g_e = 0.0
-    u.v_m = 0.3
+    u.g_e   = 0.0
+    u.v_m   = 0.3
     u.vm_eq = 0.3
     u.adapt = 0.0            
     u.spike = 0.0            
