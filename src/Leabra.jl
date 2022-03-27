@@ -118,7 +118,7 @@ function rel_avg_l(u::Unit)::Float64
     return (u.avg_l - u.avg_l_min)/(u.avg_l_max - u.avg_l_min)
 end
 
-function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
+function cycle!(u::Unit, g_e_raw::Float64, g_i::Float64)
     # Does one Leabra cycle. Called by the layer cycle method.
     # g_e_raw = instantaneous, scaled, received input
     # g_i = fffb inhibition
@@ -188,7 +188,7 @@ function cycle(u::Unit, g_e_raw::Float64, g_i::Float64)
     u.avg_m = u.avg_m + u.integ_dt * u.m_dt * (u.avg_s - u.avg_m) 
 end
 
-function clamped_cycle(u::Unit, input)
+function clamped_cycle!(u::Unit, input)
     # This function performs one cycle of the unit when its activty
     # is clamped to an input value. The activity is set to be equal
     # to the input, and all the averages are updated accordingly.
@@ -203,7 +203,7 @@ function clamped_cycle(u::Unit, input)
 end
 
 
-function updt_avg_l(u::Unit)
+function updt_avg_l!(u::Unit)
     # This function updates the long-term average 'avg_l' 
 
     # AvgL += (1 / Tau) * (Gain * AvgM - AvgL); AvgL = MAX(AvgL, Min)
@@ -219,7 +219,7 @@ function updt_avg_l(u::Unit)
     # end
 end
 
-function reset(u::Unit, random::Bool=false)
+function reset!(u::Unit, random::Bool=false)
     # This function sets the activity to a random value, and sets
     # all activity time averages equal to that value.
     # Used to begin trials from a random stationary point.
@@ -243,16 +243,16 @@ end
 # NXX1 Functions
 #
 
-function XX1(x::Float64)
+function XX1(x::Float64)::Float64
     return x / (x + 1)
 end
 
-function XX1GainCor(x::Float64, GainCorRange, NVar, Gain, GainCor)
-    gainCorFact = (GainCorRange - (x / NVar)) / GainCorRange
+function XX1GainCor(x::Float64, GainCorRange, NVar, Gain, GainCor)::Float64
+    gainCorFact::Float64 = (GainCorRange - (x / NVar)) / GainCorRange
     if gainCorFact < 0
         return XX1(Gain * x)
     end
-    newGain = Gain * (1 - GainCor*gainCorFact)
+    newGain::Float64 = Gain * (1.0 - GainCor * gainCorFact)
     return XX1(newGain * x)
 end   
 
@@ -282,52 +282,52 @@ end
 
 nxx1p = NXX1Parameters() # default set of parameters to pass in to functions
 
-function XX1GainCor(x::Float64, xp::NXX1Parameters = nxx1p)
-    gainCorFact = (xp.GainCorRange - (x / xp.NVar)) / xp.GainCorRange
+function XX1GainCor(x::Float64, xp::NXX1Parameters = nxx1p)::Float64
+    gainCorFact::Float64 = (xp.GainCorRange - (x / xp.NVar)) / xp.GainCorRange
     if gainCorFact < 0
         return XX1(xp.Gain * x)
     end
-    newGain = xp.Gain * (1 - xp.GainCor * gainCorFact)
+    newGain::Float64 = xp.Gain * (1.0 - xp.GainCor * gainCorFact)
     return XX1(newGain * x)
 end  
 
-function NoisyXX1(x::Float64, xp::NXX1Parameters = nxx1p)
+function NoisyXX1(x::Float64, xp::NXX1Parameters = nxx1p)::Float64
 	if x < 0
-		return xp.SigMultEff / (1 + exp(-(x * xp.SigGainNVar)))
+		return xp.SigMultEff / (1.0 + exp(-(x * xp.SigGainNVar)))
 	elseif x < xp.InterpRange
-		interp = 1 - ((xp.InterpRange - x) / xp.InterpRange)
+		interp::Float64 = 1.0 - ((xp.InterpRange - x) / xp.InterpRange)
 		return xp.SigValAt0 + interp * xp.InterpVal
 	else
 		return XX1GainCor(x)
     end
 end
 
-function XX1GainCorGain(x::Float64, gain::Float64, xp::NXX1Parameters = nxx1p)
-	gainCorFact = (xp.GainCorRange - (x / xp.NVar)) / xp.GainCorRange
+function XX1GainCorGain(x::Float64, gain::Float64, xp::NXX1Parameters = nxx1p)::Float64
+	gainCorFact::Float64 = (xp.GainCorRange - (x / xp.NVar)) / xp.GainCorRange
 	if gainCorFact < 0
 		return XX1(gain * x)
     end
-	newGain = gain * (1 - xp.GainCor * gainCorFact)
+	newGain::Float64 = gain * (1.0 - xp.GainCor * gainCorFact)
 	return XX1(newGain * x)
 end
 
-function NoisyXX1Gain(x::Float64, gain::Float64, xp::NXX1Parameters = nxx1p)
+function NoisyXX1Gain(x::Float64, gain::Float64, xp::NXX1Parameters = nxx1p)::Float64
 	if x < xp.InterpRange
-		sigMultEffArg = xp.SigMult * (gain * xp.NVar ^ xp.SigMultPow)
-		sigValAt0Arg = 0.5 * sigMultEffArg
+		sigMultEffArg::Float64 = xp.SigMult * (gain * xp.NVar ^ xp.SigMultPow)
+		sigValAt0Arg::Float64 = 0.5 * sigMultEffArg
 
 		if x < 0 # sigmoidal for < 0
-			return sigMultEffArg / (1 + exp(-(x * xp.SigGainNVar)))
+			return sigMultEffArg / (1.0 + exp(-(x * xp.SigGainNVar)))
 		else # else x < interp_range
-			interp = 1 - ((xp.InterpRange - x) / xp.InterpRange)
+			interp::Float64 = 1.0 - ((xp.InterpRange - x) / xp.InterpRange)
 			return sigValAt0Arg + interp * xp.InterpVal
         end
 	else
-		return xp.XX1GainCorGain(x, gain)
+		return XX1GainCorGain(x, gain)
     end
 end
 
-function nxx1(points, xp::NXX1Parameters = nxx1p)
+function nxx1(points, xp::NXX1Parameters = nxx1p)::Array{Float64}
     results = Array{Float64}(undef, length(points))
     for (index,value) in enumerate(points)
         results[index] = NoisyXX1(value, xp)
@@ -376,15 +376,15 @@ Base.show(io::IO, lay::Layer) = print(io,
                                       "avg_act_dt: ",   lay.avg_act_dt,"\n",
                                      )
 
-function layer(dims::Tuple{Int64, Int64} = (1,1))
-    N = dims[1]*dims[2]
+function layer(dims::Tuple{Int64, Int64} = (1,1))::Layer
+    N::Int64 = dims[1]*dims[2]
 
-    units = [Unit() for i in 1:N]
+    units::Array{Unit} = [Unit() for i in 1:N]
     
-    acts_avg = 0.2
-    avg_act_n =  1.0
-    pct_act_scale = 1/(avg_act_n + 2)
-    fb = 0.5
+    acts_avg::Float64  = 0.2
+    avg_act_n::Float64  =  1.0
+    pct_act_scale::Float64  = 1.0/(avg_act_n + 2.0)
+    fb::Float64  = 0.5
 
     lay = Layer(units, 
                 pct_act_scale, 
@@ -402,29 +402,29 @@ function layer(dims::Tuple{Int64, Int64} = (1,1))
     return lay
 end
 
-function acts_avg(lay::Layer)
+function acts_avg(lay::Layer)::Float64
     return mean(activities(lay))
 end
 
-function activities(lay::Layer)
+function activities(lay::Layer)::Array{Float64}
     # returns a vector with the activities of all units
     acts = zeros(Float64, lay.N)
-    for (index,unit) in enumerate(lay.units)
+    for (index::Int64, unit::Unit) in enumerate(lay.units)
         acts[index] = unit.act
     end
     return transpose(acts)
 end
 
-function scaled_acts(lay::Layer)
+function scaled_acts(lay::Layer)::Array{Float64}
     # returns a vector with the scaled activities of all units
-    acts = Array{Float64, 1}(undef, lay.N)
-    for (index,unit) in enumerate(lay.units)
+    acts = Array{Float64}(undef, lay.N)
+    for (index::Int64, unit::Unit) in enumerate(lay.units)
         acts[index] = unit.act
     end
     return lay.pct_act_scale .* acts
 end
 
-function cycle(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64})
+function cycle!(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64})
     # this function performs one Leabra cycle for the layer
     #raw_inputs = A vector of size I, where I is the total number of inputs
     #             from all layers. Each input has already been scaled
@@ -436,14 +436,14 @@ function cycle(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64
     #             that there are no external inputs.
      
     ## obtaining the net inputs    
-    # GeRaw += Sum_(recv) Prjn.GScale * Send.Act * Wt        
-    ge_raw = lay.ce_wt * raw_inputs  # contrast-enhanced weights are used
+    # GeRaw += Sum_(recv) Prjn.GScale * Send.Act * Wt    
+    ge_raw::Array{Float64} = lay.ce_wt * raw_inputs  # contrast-enhanced weights are used
     if any(ext_inputs) .> 0.0
         ge_raw = ge_raw .+ ext_inputs
     end
 
     ## obtaining inhibition
-    lay.ge_avg = mean(ge_raw)
+    lay.ge_avg::Float64 = mean(ge_raw)
 
     # it seems for a majority of the time, this won't be done, but
     # it's here just in case
@@ -455,60 +455,59 @@ function cycle(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64
             end
         end
         # ffNetin = avgGe + FFFBParams.MaxVsAvg * (maxGe - avgGe)
-        ffNetin = lay.ge_avg + lay.maxvsage * (lay.ge_max - lay.ge_avg)
+        ffNetin::Float64 = lay.ge_avg + lay.maxvsage * (lay.ge_max - lay.ge_avg)
     else
         ffNetin = lay.ge_avg
     end
     
 
     # ffi = FFFBParams.FF * MAX(ffNetin - FFBParams.FF0, 0)
-    ffi = lay.ff * max(ffNetin - lay.ff0, 0)
+    ffi::Float64 = lay.ff * max(ffNetin - lay.ff0, 0)
 
     # fbi += (1 / FFFBParams.FBTau) * (FFFBParams.FB * avgAct - fbi
     lay.fbi = lay.fbi + lay.fb_dt * (lay.fb * acts_avg(lay) - lay.fbi)
     # Gi = FFFBParams.Gi * (ffi + fbi)
-    g_i = lay.gi * (ffi + lay.fbi)
+    g_i::Float64 = lay.gi * (ffi + lay.fbi)
     
     ## calling the cycle method for all units
-    for i in 1:lay.N
-        cycle(lay.units[i], ge_raw[i], g_i)
+    for i::Int64 in 1:lay.N
+        cycle!(lay.units[i], ge_raw[i], g_i)
     end
 end
 
-function clamped_cycle(lay::Layer, input::Array{Float64})
+function clamped_cycle!(lay::Layer, input::Array{Float64})
     # sets all unit activities equal to the input and updates all
     # the variables as in the cycle function.
     # input = vector specifying the activities of all units
-    for i = 1:lay.N  # parfor ?
-        clamped_cycle(lay.units[i], input[i])
+    for i::Int64 = 1:lay.N
+        clamped_cycle!(lay.units[i], input[i])
     end
     lay.fbi = lay.fb * acts_avg(lay)
 end
         
-function averages(lay::Layer)
+function averages(lay::Layer)::Tuple{Array{Float64}, Array{Float64}, Array{Float64}}
     # Returns the s,m,l averages in the layer as vectors.
-    avg_s = [unit.avg_s for unit in lay.units]
-    avg_m = [unit.avg_m for unit in lay.units]
-    avg_l = [unit.avg_l for unit in lay.units]
+    avg_s::Array{Float64} = [unit.avg_s for unit in lay.units]
+    avg_m::Array{Float64} = [unit.avg_m for unit in lay.units]
+    avg_l::Array{Float64} = [unit.avg_l for unit in lay.units]
     return (avg_s, avg_m, avg_l)
 end
 
-function rel_avg_l(lay::Layer)
+function rel_avg_l(lay::Layer)::Array{Float64}
     # Returns the relative values of avg_l. These are the dependent
     # variables rel_avg_l in all units used in latest XCAL
     return [rel_avg_l(unit) for unit in lay.units]
-
 end
 
-function updt_avg_l(lay::Layer)
+function updt_avg_l!(lay::Layer)
     # updates the long-term average (avg_l) of all the units in the
     # layer. Usually done after a plus phase.
     for i in 1:lay.N 
-        updt_avg_l(lay.units[i])
+        updt_avg_l!(lay.units[i])
     end            
 end
 
-function updt_long_avgs(lay::Layer)
+function updt_long_avgs!(lay::Layer)
     # updates the acts_p_avg and pct_act_scale variables.
     # These variables update at the end of plus phases instead of
     # cycle by cycle. 
@@ -517,18 +516,17 @@ function updt_long_avgs(lay::Layer)
     # should have the calculation in WtScaleSpec::SLayActScale, in
     # LeabraConSpec.cpp 
     lay.acts_p_avg = lay.acts_p_avg + lay.avg_act_dt * (acts_avg(lay) - lay.acts_p_avg)
-                 
-    r_avg_act_n = max(round(lay.acts_p_avg * lay.N), 1)
-    lay.pct_act_scale = 1/(r_avg_act_n + 2)  
+    r_avg_act_n::Float64 = max(round(lay.acts_p_avg * lay.N), 1.0)
+    lay.pct_act_scale = 1.0/(r_avg_act_n + 2.0)  
 end
 
-function reset(lay::Layer)
+function reset!(lay::Layer)
     # This function sets the activity of all units to random values, 
     # and all other dynamic variables are also set accordingly.            
     # Used to begin trials from a random stationary point.
     # The activity values may also be set to zero (see unit.reset)
     for i in 1:lay.N 
-        reset(lay.units[i])
+        reset!(lay.units[i])
     end         
 end
 
@@ -553,7 +551,7 @@ mutable struct Network
     const gain::Float64             # = 6.0     # gain in the SIG function for contrast enhancement
 end
 
-function network(dim_layers, connections, w0)
+function network(dim_layers, connections, w0)::Network
     # constructor to the network class.
     # dim_layers = 1-D array. dim_layers[i] is a vector [j,k], 
     #              where j is the number of rows in layer i, and k is
@@ -563,8 +561,8 @@ function network(dim_layers, connections, w0)
     # w0 = w0 is an array. w0[i,j] is the weight matrix with the
     #      initial weights for the connections from layer j to i             
     
-    n_lay = length(dim_layers)  # number of layers
-    (nrc, ncc) = size(connections)
+    n_lay::Int64 = length(dim_layers)  # number of layers
+    (nrc::Int64, ncc::Int64) = size(connections)
 
     @assert nrc == ncc "Non-square connections matrix in network constructor"
     @assert nrc == n_lay "Number of layers inconsistent with connection matrix in network constructor"
@@ -580,21 +578,21 @@ function network(dim_layers, connections, w0)
     )
 
     ## Normalizing the rows of 'connections' so they add to 1
-    row_sums = sum(connections, dims=2)
-    for row in 1:n_lay
+    row_sums::Array{Float64,2} = sum(connections, dims=2)
+    for row::Int64 in 1:n_lay
         if row_sums[row] > 0
             connections[row,:] = connections[row,:] ./ row_sums[row]
         end
     end
 
-    for i in 1:n_lay
+    for i::Int64 in 1:n_lay
         net.layers[i] = layer(dim_layers[i])
         net.n_units = net.n_units + net.layers[i].N
     end              
 
     ## Second test of argument dimensions
-    for i in 1:n_lay
-        for j in 1:n_lay
+    for i::Int64 in 1:n_lay
+        for j::Int64 in 1:n_lay
             if w0[i,j] == 0.0
                 if connections[i,j] > 0.0
                     throw("Connected layers have no connection weights")
@@ -616,8 +614,8 @@ function network(dim_layers, connections, w0)
     ## Setting the inital weights for each layer
     # first find how many units project to the layer in all the network
     lay_inp_size::Array{Int64} = zeros(1,n_lay)
-    for i in 1:n_lay
-        for j in 1:n_lay
+    for i::Int64 in 1:n_lay
+        for j::Int64 in 1:n_lay
             if connections[i,j] > 0  # if layer j projects to layer i
                 lay_inp_size[i] = lay_inp_size[i] + net.layers[j].N
             end
@@ -627,10 +625,10 @@ function network(dim_layers, connections, w0)
     # add the weights for each entry in w0 as a group of columns in wt
     for i in 1:n_lay
         net.layers[i].wt = zeros(Float64, (net.layers[i].N, lay_inp_size[i]))
-        index = 1
-        for j = 1:n_lay
+        index::Int64 = 1
+        for j::Int64 = 1:n_lay
             if connections[i,j] > 0  # if layer j projects to layer i
-                nj = net.layers[j].N
+                nj::Int64 = net.layers[j].N
                 net.layers[i].wt[:,index:index+nj-1] = w0[i,j]
                 index = index + nj
             end
@@ -638,22 +636,22 @@ function network(dim_layers, connections, w0)
     end 
     
     # set the contrast-enhanced version of the weights
-    for lay in 1:n_lay
+    for lay::Int64 in 1:n_lay
         net.layers[lay].ce_wt = 1 ./ (1 .+ (net.off * (1 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
     end
 
     return net
 end
 
-function XCAL_learn(net::Network)
+function XCAL_learn!(net::Network)
     # XCAL_learn() applies the XCAL learning equations in order to
     # modify the weights in the network. This is typically done at
     # the end of a plus phase. The equations used come from:
     # https://github.com/emer/leabra
     
     ## updating the long-term averages
-    for lay in 1:net.n_lays
-        updt_avg_l(net.layers[lay]) 
+    for lay::Int64 in 1:net.n_lays
+        updt_avg_l!(net.layers[lay]) 
     end
     
     ## Extracting the averages for all layers            
@@ -662,7 +660,7 @@ function XCAL_learn(net::Network)
     avg_l = Array{Vector{Float64}, 1}(undef, net.n_lays)
     avg_s_eff = Array{Vector{Float64}, 1}(undef, net.n_lays)
 
-    for lay in 1:net.n_lays
+    for lay::Int64 in 1:net.n_lays
         (avg_s[lay], avg_m[lay], avg_l[lay]) = averages(net.layers[lay]) # layer.averages() function
         # AvgSLrn = (1-LrnM) * AvgS + LrnM * AvgM
         avg_s_eff[lay] = net.lrn_m * avg_m[lay] + (1 - net.lrn_m) * avg_s[lay]
@@ -670,7 +668,7 @@ function XCAL_learn(net::Network)
     
     ## obtaining avg_l_lrn
     avg_l_lrn = Array{Vector{Float64}, 1}(undef, net.n_lays)
-    for lay in 1:net.n_lays
+    for lay::Int64 in 1:net.n_lays
         # AvgLLrn = ((Max - Min) / (Gain - Min)) * (AvgL - Min)
         avg_l_lrn[lay] = net.avg_l_lrn_min .+ rel_avg_l(net.layers[lay]) .* (net.avg_l_lrn_max - net.avg_l_lrn_min)
     end
@@ -681,8 +679,8 @@ function XCAL_learn(net::Network)
                                                                         # units of the receiving layer, columns
                                                                         # to units of the sending layer.
     srm = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays)) # ditto for avg_m
-    for rcv in 1:net.n_lays
-        for snd in rcv:net.n_lays
+    for rcv::Int64 in 1:net.n_lays
+        for snd::Int64 in rcv:net.n_lays
             # notice we only calculate the 'upper triangle' of the
             # arrays because of symmetry
             if net.connections[rcv,snd] > 0 || net.connections[snd,rcv] > 0
@@ -702,12 +700,12 @@ function XCAL_learn(net::Network)
     ## calculate the weight changes
     dwt = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays)) # dwt[i,j] is the matrix of weight changes
                                                                       # for the weights from layer j to i
-    for rcv in 1:net.n_lays
-        for snd in 1:net.n_lays
+    for rcv::Int64 in 1:net.n_lays
+        for snd::Int64 in 1:net.n_lays
             if net.connections[rcv,snd] > 0
-                sndN = net.layers[snd].N
+                sndN::Int64 = net.layers[snd].N
                 # dwt = XCAL(srs, srm) + Recv.AvgLLrn * XCAL(srs, Recv.AvgL)
-                temp_dwt = ( net.m_lrn .* xcal(net, srs[rcv,snd], srm[rcv,snd]) .+ ((expand(avg_l_lrn[rcv], 2, size(srs[rcv,snd])[2])) .* xcal(net, srs[rcv,snd], transpose(repeat(transpose(avg_l[rcv]), sndN)))))
+                temp_dwt::Array{Float64, 2} = ( net.m_lrn .* xcal(net, srs[rcv,snd], srm[rcv,snd]) .+ ((expand(avg_l_lrn[rcv], 2, size(srs[rcv,snd])[2])) .* xcal(net, srs[rcv,snd], transpose(repeat(transpose(avg_l[rcv]), sndN)))))
                 # DWt = Lrate * dwt
                 dwt[rcv,snd] = net.lrate .* temp_dwt
             end
@@ -715,11 +713,11 @@ function XCAL_learn(net::Network)
     end
 
     ## update weights (with weight bounding)
-    for rcv in 1:net.n_lays
+    for rcv::Int64 in 1:net.n_lays
         # DWt = 0
         DW = zeros(Float64, (net.n_lays,net.n_lays))
-        isempty_DW = true
-        for snd in 1:net.n_lays
+        isempty_DW::Bool = true
+        for snd::Int64 in 1:net.n_lays
             if net.connections[rcv,snd] > 0
                 if isempty_DW
                     DW = dwt[rcv,snd]
@@ -733,22 +731,22 @@ function XCAL_learn(net::Network)
             # Here's the weight bounding part, as in the CCN book
             # DWt *= (DWt > 0) ? Wb.Inc * (1-LWt) : Wb.Dec * LWt
             # LWt += DWt
-            idxp = net.layers[rcv].wt .> 0
-            idxn = .!idxp # maps the "!" function onto the BitArray
-            net.layers[rcv].wt[idxp] = net.layers[rcv].wt[idxp] .+ (1 .- net.layers[rcv].wt[idxp]) .* DW[idxp]
+            idxp::BitArray = net.layers[rcv].wt .> 0
+            idxn::BitArray = .!idxp # maps the "!" function onto the BitArray
+            net.layers[rcv].wt[idxp] = net.layers[rcv].wt[idxp] .+ (1.0 .- net.layers[rcv].wt[idxp]) .* DW[idxp]
             net.layers[rcv].wt[idxn] = net.layers[rcv].wt[idxn] .+ net.layers[rcv].wt[idxn] .* DW[idxn]
         end
     end
     
     ## set the contrast-enhanced version of the weights
-    for lay in 1:net.n_lays
+    for lay::Int64 in 1:net.n_lays
         # Wt = SIG(LWt)
         # SIG(w) = 1 / (1 + (Off * (1-w)/w)^Gain)
-        net.layers[lay].ce_wt = 1 ./ (1 .+ (net.off .* (1 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
+        net.layers[lay].ce_wt = 1.0 ./ (1.0 .+ (net.off .* (1.0 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
     end
 end
 
-function updt_long_avgs(net::Network)
+function updt_long_avgs!(net::Network)
     # updates the acts_p_avg and pct_act_scale variables for all layers. 
     # These variables update at the end of plus phases instead of
     # cycle by cycle. The avg_l values are not updated here.
@@ -757,18 +755,18 @@ function updt_long_avgs(net::Network)
     # should have the calculation in WtScaleSpec::SLayActScale, in
     # LeabraConSpec.cpp 
     for lay in 1:net.n_lays
-        updt_long_avgs(net.layers[lay])
+        updt_long_avgs!(net.layers[lay])
     end
 end
 
-function m1(net::Network)
+function m1(net::Network)::Float64
     # obtains the m1 factor: the slope of the left-hand line in the
     # "check mark" XCAL function. Notice it includes the negative
     # sign.
     return (net.d_rev - 1.0) / net.d_rev
 end
         
-function xcal(net::Network, x, th)
+function xcal(net::Network, x, th)::Array{Float64, 2}
     @assert size(x) == size(th)
     # this function implements the "check mark" function in XCAL.
     # x = an array of abscissa values.
@@ -786,27 +784,25 @@ function xcal(net::Network, x, th)
     #     return (-x * ((1 - net.d_rev)/net.d_rev))
     # end
 
-    f = zeros(size(x))
-    temp = x .> net.d_thr
-    temp2 = x .< (net.d_rev * th)
-    idx1 = temp .& temp2
-    idx2 = x .>= (net.d_rev * th)
+    f::Array{Float64, 2} = zeros(size(x))
+    idx1::BitArray = (x .> net.d_thr) .& (x .< (net.d_rev * th))
+    idx2::BitArray = x .>= (net.d_rev * th)
 
     f[idx1] = m1(net) * x[idx1]
     f[idx2] = x[idx2] - th[idx2]
     return f      
 end
 
-function reset(net::Network)
+function reset!(net::Network)
     # This function sets the activity of all units to random values, 
     # and all other dynamic variables are also set accordingly.            
     # Used to begin trials from a random stationary point.
     for lay = 1:net.n_lays
-        reset(net.layers[lay])
+        reset!(net.layers[lay])
     end
 end
 
-function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
+function set_weights!(net::Network, w::Array{Matrix{Float64}, 2})
     # This function receives an array w, which is like the
     # array w0 in the constructor: w[i,j] is the weight matrix with
     # the initial weights for the connections from layer j to layer
@@ -817,8 +813,8 @@ function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
     ## First we test the dimensions of w
     @assert sum(size(w) == size(net.connections)) >= 2 "Inconsistent dimensions between weights and connectivity specification in set_weights"
 
-    for i in 1:net.n_lays
-        for j in 1:net.n_lays
+    for i::Int64 in 1:net.n_lays
+        for j::Int64 in 1:net.n_lays
             if all(w[i,j] .== 0.0) # if isempty(w[i,j])
                 if net.connections[i,j] > 0
                     throw("Connected layers have no connection weights")
@@ -827,7 +823,7 @@ function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
                 if net.connections[i,j] == 0
                     throw("Non-empty weight matrix for unconnected layers")
                 end
-                (r,c) = size(w[i,j])
+                (r::Int64, c::Int64) = size(w[i,j])
                 if net.layers[i].N != r || net.layers[j].N != c
                     throw("Initial weights are inconsistent with layer dimensions")
                 end
@@ -838,8 +834,8 @@ function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
     ## Now we set the weights
     # first find how many units project to the layer in all the network
     lay_inp_size = zeros(1,net.n_lays)
-    for i in 1:net.n_lays
-        for j in 1:net.n_lays
+    for i::Int64 in 1:net.n_lays
+        for j::Int64 in 1:net.n_lays
             if net.connections[i,j] > 0  # if layer j projects to layer i
                 lay_inp_size[i] = lay_inp_size[i] + net.layers[j].N
             end
@@ -847,12 +843,12 @@ function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
     end
     
     # add the weights for each entry in w0 as a group of columns in wt
-    for i in 1:net.n_lays
+    for i::Int64 in 1:net.n_lays
         net.layers[i].wt = zeros(net.layers[i].N,lay_inp_size[i])
-        index = 1
+        index::Int64 = 1
         for j in 1:net.n_lays
             if net.connections[i,j] > 0  # if layer j projects to layer i
-                nj = net.layers[j].N
+                nj::Int64 = net.layers[j].N
                 net.layers[i].wt[:,index:index+nj-1] = w[i,j]
                 index = index + nj
             end
@@ -860,21 +856,21 @@ function set_weights(net::Network, w::Array{Matrix{Float64}, 2})
     end   
     
     # set the contrast-enhanced version of the weights
-    for lay in 1:net.n_lays
+    for lay::Int64 in 1:net.n_lays
         net.layers[lay].ce_wt = 1 ./ (1 .+ (net.off .* (1 .- net.layers[lay].wt) ./ net.layers[lay].wt) .^ net.gain)
     end
 end
 
-function get_weights(netnet::Network)
+function get_weights(netnet::Network)::Array{Array{Float64, 2}, 2}
     # This function returns a 2D array w.
     # w[rcv,snd] contains the weight matrix for the projections from
     # layer snd to layer rcv.
     w = Array{Array{Float64, 2}, 2}(undef, (net.n_lays,net.n_lays))
-    for rcv in 1:net.n_lays
-        idx1 = 1 # column where the weights from layer 'snd' start
-        for snd in 1:net.n_lays
+    for rcv::Int64 in 1:net.n_lays
+        idx1::Int64 = 1 # column where the weights from layer 'snd' start
+        for snd::Int64 in 1:net.n_lays
             if net.connections[rcv,snd] > 0
-                Nsnd = net.layers[rcv].N
+                Nsnd::Int64 = net.layers[rcv].N
                 w[rcv,snd] = net.layers[rcv].wt[:,idx1:idx1+Nsnd-1]
                 idx1 = idx1 + Nsnd
             end
@@ -883,7 +879,7 @@ function get_weights(netnet::Network)
     return w
 end
 
-function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
+function cycle!(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     # this function calls the cycle method for all layers.
     # inputs[i] is  a matrix that for layer i
     #          specifies the external input to each of its units.
@@ -894,18 +890,18 @@ function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     ## Testing the arguments and reshaping the input
     @assert length(inputs) == net.n_lays "Number of layers inconsistent with number of inputs in network cycle"
 
-    for inp in 1:net.n_lays  # reshaping inputs into column vectors
+    for inp::Int64 in 1:net.n_lays  # reshaping inputs into column vectors
         if any(inputs[inp] .> 0.0) #if ~isempty(inputs[inp])
             inputs[inp] = reshape(inputs[inp], net.layers[inp].N, 1)
         end
     end
     
     ## First we set all clamped layers to their input values
-    clamped_lays = zeros(1, net.n_lays)
+    clamped_lays = zeros(Float64, 1, net.n_lays)
     if clamp_inp
-        for lay in 1:net.n_lays
+        for lay::Int64 in 1:net.n_lays
             if any(inputs[lay] .> 0.0) # if ~isempty(inputs[lay])
-                clamped_cycle(net.layers[lay], inputs[lay])
+                clamped_cycle!(net.layers[lay], inputs[lay])
                 clamped_lays[lay] = 1
             end
         end
@@ -914,21 +910,21 @@ function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     ## We make a copy of the scaled activity for all layers
     # scaled_acts = zeros(Float64, 1, net.n_lays)
     scaled_acts_array = Array{Vector{Float64}}(undef, net.n_lays)
-    for lay in 1:net.n_lays
+    for lay::Int64 in 1:net.n_lays
         scaled_acts_array[lay] = scaled_acts(net.layers[lay])
     end
     
     ## For each unclamped layer, we put all its scaled inputs in one
     #  column vector, and call its cycle function with that vector
-    for recv in 1:net.n_lays
+    for recv::Int64 in 1:net.n_lays
         if all(clamped_lays[recv] .== 0.0) # if the layer is not clamped
             # for each 'recv' layer we find its input vector
-            long_input = zeros(1, net.n_units) # preallocating for speed
-            n_inps = 0  # will have the # of input units to 'recv'
-            n_sends = 0 # will have the # of layers sending to 'recv'
-            conns = (net.connections[recv, :] .> 0.0)
-            wt_scale_rel = net.connections[recv, conns]
-            for send in 1:net.n_lays
+            long_input = zeros(Float64, 1, net.n_units) # preallocating for speed
+            n_inps::Int64 = 0  # will have the # of input units to 'recv'
+            n_sends::Int64 = 0 # will have the # of layers sending to 'recv'
+            conns::BitArray = (net.connections[recv, :] .> 0.0)
+            wt_scale_rel::Array{Float64} = net.connections[recv, conns]
+            for send::Int64 in 1:net.n_lays
                 if net.connections[recv, send] > 0
                     n_sends = n_sends + 1
                     long_input[(1 + n_inps):(n_inps + net.layers[send].N)] = wt_scale_rel[n_sends] .* scaled_acts_array[send]
@@ -936,7 +932,7 @@ function cycle(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
                 end
             end
             # now we call 'cycle'
-            cycle(net.layers[recv], long_input[1:n_inps], inputs[recv])                   
+            cycle!(net.layers[recv], long_input[1:n_inps], inputs[recv])                   
         end
     end
     
@@ -949,15 +945,15 @@ end
 # Higher level functions for building networks
 #
 
-function build_network(dim_lays, connections)
-    n_lays = length(dim_lays)
-    n_units = zeros(Int64,1,n_lays)
-    for i in 1:n_lays
+function build_network(dim_lays, connections)::Network
+    n_lays::Int64 = length(dim_lays)
+    n_units::Array{Int64} = zeros(Int64,1,n_lays)
+    for i::Int64 in 1:n_lays
         n_units[i] = dim_lays[i][1] * dim_lays[i][2]
     end
     w0 = Array{Any}(undef, (n_lays,n_lays))
-    for rcv in 1:n_lays
-        for snd in 1:n_lays
+    for rcv::Int64 in 1:n_lays
+        for snd::Int64 in 1:n_lays
             if connections[rcv,snd] > 0
                 w0[rcv,snd] = 0.3 .+ 0.4*rand(Uniform(),n_units[rcv],n_units[snd])
                 # w0[rcv,snd] = rand(Uniform(),n_units[rcv],n_units[snd])
@@ -972,9 +968,9 @@ function build_network(dim_lays, connections)
 end
 
 
-function create_random_inputs(n_inputs)
+function create_random_inputs(n_inputs)::Array{Array{Float64}, 2}
     inputs = Array{Array{Float64}, 2}(undef, (n_inputs,2))
-    for i in 1:n_inputs
+    for i::Int64 in 1:n_inputs
         inputs[i,1] = rand(Binomial(1,0.5),(n_inputs,n_inputs))
         inputs[i,2] = inputs[i,1];
     end
@@ -982,14 +978,14 @@ function create_random_inputs(n_inputs)
     return inputs
 end
 
-function create_patterns(n_inputs)
+function create_patterns(n_inputs)::Array{Array{Float64}, 2}
     inputs = Array{Array{Float64}, 2}(undef, (n_inputs,2))
     inputs[1,1] = repeat([0 0 1 0 0],5,1);   # vertical line
     inputs[2,1] = [1 1 1 1 1;zeros(4,5)];    # horizontal line
     inputs[3,1] = [0 0 0 0 1;0 0 0 1 0;0 0 1 0 0;0 1 0 0 0; 1 0 0 0 0]; # diagonal 1
     inputs[4,1] = reverse(inputs[3,1], dims=2)
     inputs[5,1] =  1.0 .* (!=(0.0).(inputs[3,1]) .|| !=(0.0).(inputs[4,1]))   # two diagonals
-    for i in 1:n_inputs # outputs are the same as inputs (an autoassociator)
+    for i::Int64 in 1:n_inputs # outputs are the same as inputs (an autoassociator)
         inputs[i,1] = 0.01 .+ 0.98 .* inputs[i,1];
         inputs[i,2] = inputs[i,1];
     end
@@ -997,11 +993,11 @@ function create_patterns(n_inputs)
 end
 
 
-function clamp_data(data, num_layers, layers_to_clamp, selected_data)
-    resulting_data = Vector{Array{Float64}}(undef, num_layers)
+function clamp_data(data, num_layers, layers_to_clamp, selected_data)::Array{Array{Float64}}
+    resulting_data = Array{Array{Float64}}(undef, num_layers)
     output_layer::Bool = false
 
-    for layer in 1:num_layers
+    for layer::Int64 in 1:num_layers
         if layer == num_layers
             output_layer = true
         end
@@ -1020,38 +1016,38 @@ function clamp_data(data, num_layers, layers_to_clamp, selected_data)
     return resulting_data
 end
 
-function train_network!(net, inputs, n_epochs)
-    n_minus = 50 # number of minus cycles per trial
-    n_plus = 25  # number of plus cycles per trial
-    n_trials = size(inputs)[1]
+function train_network!(net, inputs, n_epochs)::Array{Float64}
+    n_minus::Int64 = 50 # number of minus cycles per trial
+    n_plus::Int64 = 25  # number of plus cycles per trial
+    n_trials::Int64 = size(inputs)[1]
 
-    lrate_sched = collect(LinRange(0.8, 0.2, n_epochs))
-    errors = zeros(n_epochs,n_trials)
-    for epoch in 1:n_epochs
-        randomized_input = randperm(n_trials)
+    lrate_sched::Array{Float64} = collect(LinRange(0.8, 0.2, n_epochs))
+    errors = zeros(Float64, n_epochs,n_trials)
+    for epoch::Int64 in 1:n_epochs
+        randomized_input::Array{Int64} = randperm(n_trials)
         net.lrate = lrate_sched[epoch]
-        for trial in 1:n_trials
-            Leabra.reset(net)
-            selected_data = randomized_input[trial] # pick a random set of data
+        for trial::Int64 in 1:n_trials
+            Leabra.reset!(net)
+            selected_data::Int64 = randomized_input[trial] # pick a random set of data
 
             # Minus phase
             # Clamp input layer
-            sel_data_array = clamp_data(inputs, net.n_lays, [1], selected_data)
+            sel_data_array::Array{Array{Float64}} = clamp_data(inputs, net.n_lays, [1], selected_data)
             for minus in 1:n_minus
-                Leabra.cycle(net, sel_data_array, true)
+                Leabra.cycle!(net, sel_data_array, true)
             end
-            outs = (Leabra.activities(net.layers[net.n_lays]))
+            outs::Array{Float64, 2} = (Leabra.activities(net.layers[net.n_lays]))
 
             # Plus phase
             # Clamp input and output layer
             sel_data_array = clamp_data(inputs, net.n_lays, [1,net.n_lays], selected_data)
             for plus in 1:n_plus
-                Leabra.cycle(net, sel_data_array, true);
+                Leabra.cycle!(net, sel_data_array, true);
             end
-            Leabra.updt_long_avgs(net)
+            Leabra.updt_long_avgs!(net)
 
             # Learning
-            Leabra.XCAL_learn(net)
+            Leabra.XCAL_learn!(net)
             
             # Errors
             errors[epoch, selected_data] = 1 - sum(outs .* transpose(inputs[selected_data, 2][:])) / ( norm(outs) * norm(transpose(inputs[selected_data, 2][:])) );                    
