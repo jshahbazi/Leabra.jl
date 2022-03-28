@@ -188,14 +188,13 @@ function cycle!(u::Unit, g_e_raw::Float64, g_i::Float64)
     u.avg_m  =  u.avg_m + u.integ_dt *  u.m_dt * (u.avg_s  - u.avg_m) 
 end
 
-function clamped_cycle!(u::Unit, input)
+function clamped_cycle!(u::Unit, input::Float64)
     # This function performs one cycle of the unit when its activty
     # is clamped to an input value. The activity is set to be equal
     # to the input, and all the averages are updated accordingly.
     
     ## Clamping the activty to the input
     u.act = input
-    
     ## updating averages
     u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act    - u.avg_ss)
     u.avg_s  =  u.avg_s + u.integ_dt * u.s_dt  * (u.avg_ss - u.avg_s)
@@ -247,7 +246,7 @@ function XX1(x::Float64)::Float64
     return x / (x + 1)
 end
 
-function XX1GainCor(x::Float64, GainCorRange, NVar, Gain, GainCor)::Float64
+function XX1GainCor(x::Float64, GainCorRange::Float64, NVar::Float64, Gain::Int64, GainCor::Float64)::Float64
     gainCorFact::Float64 = (GainCorRange - (x / NVar)) / GainCorRange
     if gainCorFact < 0
         return XX1(Gain * x)
@@ -345,7 +344,7 @@ mutable struct Layer
     acts_p_avg::Float64
     ge_avg::Float64
     ge_max::Float64
-    maxvsage::Float64  # def:"0,0.5,1" desc:"what proportion of the maximum vs. average netinput to use in the feedforward inhibition computation -- 0 = all average, 1 = all max, and values in between = proportional mix between average and max (ff_netin = avg + ff_max_vs_avg * (max - avg)) -- including more max can be beneficial especially in situations where the average can vary significantly but the activity should not -- max is more robust in many situations but less flexible and sensitive to the overall distribution -- max is better for cases more closely approximating single or strictly fixed winner-take-all behavior -- 0.5 is a good compromise in many cases and generally requires a reduction of .1 or slightly more (up to .3-.5) from the gi value for 0"`
+    maxvsage::Float64
     wt::Array{Float64, 2}
     ce_wt::Array{Float64, 2}
     N::Int64
@@ -445,8 +444,7 @@ function cycle!(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float6
     ## obtaining inhibition
     lay.ge_avg::Float64 = mean(ge_raw)
 
-    # it seems for a majority of the time, this won't be done, but
-    # it's here just in case
+    # it seems for a majority of the time, this won't be done, but it's here just in case
     if lay.maxvsage > 0.0
         for value in ge_raw
             lay.ge_max = 0.0 # TODO does this go here?
@@ -551,16 +549,18 @@ mutable struct Network
     const gain::Float64             # = 6.0     # gain in the SIG function for contrast enhancement
 end
 
-function network(dim_layers, connections, w0)::Network
+function network(dim_layers::Vector{Tuple{Int64, Int64}}, connections::Matrix{Float64}, w0::Array{Union{Array{Float64}, Float64}, 2})::Network 
+    # TODO get the w0 parameter down to a single type.  A union is better than an Any, but it could be improved.  However, this may require reworking 
+    #      the algorithm.
     # constructor to the network class.
-    # dim_layers = 1-D array. dim_layers[i] is a vector [j,k], 
+    # dim_layers = 1D array (vector). dim_layers[i] is a vector [j,k], 
     #              where j is the number of rows in layer i, and k is
     #              the number of columns in layer i.
-    # connections = a 2D array. If layer j sends projections to 
+    # connections = 2D array (matrix). If layer j sends projections to 
     #               layer i, then connections[i,j] = c > 0; 0 otherwise
-    # w0 = w0 is an array. w0[i,j] is the weight matrix with the
+    # w0 = 2D array. w0[i,j] is the weight matrix with the
     #      initial weights for the connections from layer j to i             
-    
+
     n_lay::Int64 = length(dim_layers)  # number of layers
     (nrc::Int64, ncc::Int64) = size(connections)
 
@@ -945,13 +945,13 @@ end
 # Higher level functions for building networks
 #
 
-function build_network(dim_lays, connections)::Network
+function build_network(dim_lays::Vector{Tuple{Int64, Int64}}, connections::Matrix{Float64})::Network
     n_lays::Int64 = length(dim_lays)
     n_units::Array{Int64} = zeros(Int64,1,n_lays)
     for i::Int64 in 1:n_lays
         n_units[i] = dim_lays[i][1] * dim_lays[i][2]
     end
-    w0 = Array{Any}(undef, (n_lays,n_lays))
+    w0 = Array{Union{Array{Float64}, Float64}, 2}(undef, (n_lays,n_lays))
     for rcv::Int64 in 1:n_lays
         for snd::Int64 in 1:n_lays
             if connections[rcv,snd] > 0
@@ -968,7 +968,7 @@ function build_network(dim_lays, connections)::Network
 end
 
 
-function create_random_inputs(n_inputs)::Array{Array{Float64}, 2}
+function create_random_inputs(n_inputs::Int64)::Array{Array{Float64}, 2}
     inputs = Array{Array{Float64}, 2}(undef, (n_inputs,2))
     for i::Int64 in 1:n_inputs
         inputs[i,1] = rand(Binomial(1,0.5),(n_inputs,n_inputs))
@@ -978,7 +978,7 @@ function create_random_inputs(n_inputs)::Array{Array{Float64}, 2}
     return inputs
 end
 
-function create_patterns(n_inputs)::Array{Array{Float64}, 2}
+function create_patterns(n_inputs::Int64)::Array{Array{Float64}, 2}
     inputs = Array{Array{Float64}, 2}(undef, (n_inputs,2))
     inputs[1,1] = repeat([0 0 1 0 0],5,1);   # vertical line
     inputs[2,1] = [1 1 1 1 1;zeros(4,5)];    # horizontal line
@@ -993,7 +993,7 @@ function create_patterns(n_inputs)::Array{Array{Float64}, 2}
 end
 
 
-function clamp_data(data, num_layers, layers_to_clamp, selected_data)::Array{Array{Float64}}
+function clamp_data(data::Matrix{Array{Float64}}, num_layers::Int64, layers_to_clamp::Vector{Int64}, selected_data::Int64)::Array{Array{Float64}}
     resulting_data = Array{Array{Float64}}(undef, num_layers)
     output_layer::Bool = false
 
@@ -1016,7 +1016,7 @@ function clamp_data(data, num_layers, layers_to_clamp, selected_data)::Array{Arr
     return resulting_data
 end
 
-function train_network!(net, inputs, n_epochs)::Array{Float64}
+function train_network!(net::Network, inputs::Matrix{Array{Float64}}, n_epochs::Int64)::Array{Float64}
     n_minus::Int64 = 50 # number of minus cycles per trial
     n_plus::Int64 = 25  # number of plus cycles per trial
     n_trials::Int64 = size(inputs)[1]
