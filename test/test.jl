@@ -31,7 +31,7 @@ include("../src/Leabra.jl")
     #     @test myunit.avg_ss == 0.48484848484848486
     #     @test myunit.avg_s == 0.33484848484848484
     #     @test myunit.avg_m == 0.21212121212121213
-    #     Leabra.reset(myunit)
+    #     Leabra.!(myunit)
     # end
 
     @testset "Test Layer Functions" begin
@@ -40,8 +40,8 @@ include("../src/Leabra.jl")
         @test Leabra.scaled_acts(mylayer) == [0.06666666666666667]
         @test Leabra.averages(mylayer) == ([0.2], [0.2], [0.1])
         @test Leabra.rel_avg_l(mylayer) == [0.0]
-        @test Leabra.updt_long_avgs(mylayer) == 0.3333333333333333
-        Leabra.reset(mylayer)
+        @test Leabra.updt_long_avgs!(mylayer) == 0.3333333333333333
+        Leabra.reset!(mylayer)
 
         mylayer = Leabra.layer((5,2))
         @test Leabra.acts_avg(mylayer) == 0.19999999999999998
@@ -50,8 +50,8 @@ include("../src/Leabra.jl")
                                            [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2], 
                                            [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
         @test Leabra.rel_avg_l(mylayer) == [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        @test Leabra.updt_long_avgs(mylayer) == 0.25
-        Leabra.reset(mylayer)
+        @test Leabra.updt_long_avgs!(mylayer) == 0.25
+        Leabra.reset!(mylayer)
     end
 
     @testset "Test Network Functions" begin
@@ -66,11 +66,11 @@ include("../src/Leabra.jl")
         for i in 1:n_lays
             n_units[i] = dim_lays[i][1] * dim_lays[i][2]
         end
-        w0 = Array{Any}(undef, (n_lays,n_lays))
+        w0 = Array{Union{Array{Float64}, Float64}, 2}(undef, (n_lays,n_lays))
         for rcv in 1:n_lays
             for snd in 1:n_lays
                 if connections[rcv,snd] > 0
-                    w0[rcv,snd] = 0.3 .+ 0.4*rand(Uniform(),n_units[rcv],n_units[snd])
+                    w0[rcv,snd] = 0.3 .+ 0.4.*rand(Uniform(),n_units[rcv],n_units[snd])
                     # w0[rcv,snd] = rand(Uniform(),n_units[rcv],n_units[snd])
                 else
                     w0[rcv,snd] = 0.0
@@ -96,25 +96,25 @@ include("../src/Leabra.jl")
             order = randperm(n_trials)
             net.lrate = lrate_sched[epoch]
             for trial in 1:n_trials
-                Leabra.reset(net)
+                Leabra.reset!(net)
                 pat = order[trial]
 
                 # Minus phase
                 inputs::Vector{Array{Float64}} = [patterns[pat, 1], [], []]
                 for minus in 1:n_minus
-                    Leabra.cycle(net, inputs, true)
+                    Leabra.cycle!(net, inputs, true)
                 end
                 outs = (Leabra.activities(net.layers[3]))
 
                 # Plus phase
                 inputs = [patterns[pat, 1], [], patterns[pat, 2]];
                 for plus in 1:n_plus # plus cycles: layers 1 and 3 are clamped
-                    Leabra.cycle(net, inputs, true);
+                    Leabra.cycle!(net, inputs, true);
                 end
-                Leabra.updt_long_avgs(net) # update averages used for net input scaling                            
+                Leabra.updt_long_avgs!(net) # update averages used for net input scaling                            
 
                 # Learning
-                Leabra.XCAL_learn(net)  # updates the avg_l vars and applies XCAL learning  
+                Leabra.XCAL_learn!(net)  # updates the avg_l vars and applies XCAL learning  
                 
                 # Errors
                 # Only the cosine error is used here
