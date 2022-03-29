@@ -32,211 +32,6 @@ function expand(x, dim, copies)
     return repeat(reshape(x, new_size), outer=rep)
 end
 
-######################################################################################################
-# Unit Functions
-#
-
-# g = conductance
-#       ge = excitatory conductance - net excitatory input to the neuron
-#       gi = inhibitory conductance - net inhibitory input to the neuron
-# E = driving potential
-#       Ee = excitatory driving potential
-# V = voltage potential
-#       Vm = membrane potential
-#       Vmr = reset potential = v_reset
-# 0 = action potential threshold = thr = spk_thr
-# I = current
-# dtvm = rate constant that determines how fast membrance potential changes
-#       dtvm = vm_dt = ac.Dt.VmDt = v_dt
-
-# Summary of Neuron Equations and Normalized Parameters
-# Table 2.1 From CCN 4th Ed.
-# Parameter     Bio Val     Norm Val
-# Time	        0.001 sec	1ms 
-# Current	    1x10−8 A 	10 nA 
-# Capacitance   1x10−12 F 	1pF 
-# GbarL (leak)  10 nS	    0.1
-# GbarE (excite)100 nS 	    1
-# ErevI (inhib)	-75mV 	    0.25
-# θ (Thr)	     -50mV	    0.5
-# Voltage 	    100mV	    0..2
-# Conductance 	1x10−9 S	1 nS
-# C (memb cap) 	281 pF	    Dt = .355
-# GBarI (inhib) 100 nS	    1
-# ErevL (leak) 	-70mV	    0.3
-# ErevE (excite)0mV	        1
-# SpikeThr	    20mV	    1.2
-
-
-mutable struct Unit # rate code approximation
-    act::Float64        # = 0.2           # "firing rate" of the unit
-    avg_ss::Float64     # = act           # super-short time-scale activation average
-    avg_s::Float64      # = act           # short time-scale activation average
-    avg_m::Float64      # = act           # medium time-scale activation average
-    avg_l::Float64      # = 0.1           # long time-scale average of medium-time scale (trial level) activation, used for the BCM-style floating threshold in XCAL  
-    g_e::Float64        # = 0.0           # net input. Asymptotically approaches g_e_raw (see cycle).
-    v_m::Float64        # = 0.3           # membrane potential
-    vm_eq::Float64      # = 0.3           # a version of v_m that doesn't reset with spikes
-    adapt::Float64      # = 0.0           # adaptation, as in the AdEx model 
-    spike::Bool         # = false         # a flag that indicates spiking threshold was crossed
-
-    # constants
-    # const g_bar_e::Float64     # = 0.3
-    # const g_bar_l::Float64     # = 0.3
-    const g_e_dt::Float64     # = 1/1.4   # time step constant for update of 'g_e'
-    const integ_dt::Float64   # = 1.0     # time step constant for integration of cycle dynamics
-    const vm_dt::Float64      # = 1/3.3   # time step constant for membrane potential
-    const l_dn_dt::Float64    # = 1/2.5   # time step constant for avg_l decrease   # TODO never used
-    const adapt_dt::Float64   # = 1/144   # time step constant for adaptation
-    const ss_dt::Float64      # = 0.5     # time step for super-short average
-    const s_dt::Float64       # = 0.5     # time step for short average
-    const m_dt::Float64       # = 0.1     # time step for medium-term average
-    const avg_l_dt::Float64   # = 0.1     # time step for long-term average
-    const avg_l_max::Float64  # = 1.5     # max value of avg_l
-    const avg_l_min::Float64  # = 0.1     # min value of avg_l
-    const avg_l_gain::Float64 # = 2.5     
-    
-    const e_rev_e::Float64    # = 1.0     # excitatory reversal potential
-    const e_rev_i::Float64    # = 0.25    # inhibitory reversal potential
-    const e_rev_l::Float64    # = 0.3     # leak reversal potential
-    const g_bar_l::Float64    # = 0.1     # leak conductance
-    const g_bar_e::Float64    # = 1.0     # excitatory conductance
-    const thr::Float64        # = 0.5     # normalized "rate threshold"
-    const spk_thr::Float64    # = 1.2     # normalized spike threshold
-    const vm_r::Float64       # = 0.3     # reset potential after spike
-    const vm_gain::Float64    # = 0.04    # gain that voltage produces on adaptation
-    const spike_gain::Float64 # = 0.00805 # effect of spikes on adaptation
-    const l_up_inc::Float64   # = 0.2     # increase in avg_l if avg_m has been 'large'   # TODO never used
-    
-    function Unit()
-        return new( 0.2, 0.2, 0.2, 0.2, 0.1, 0.0, 0.3, 0.3, 0.0, false,
-                    1/1.4, 1.0, 1/3.3, 1/2.5, 1/144, 0.5, 0.5, 0.1, 0.1, 1.5, 0.1, 2.5, 1.0, 0.25, 0.3, 0.1, 1.0, 0.5, 1.2, 0.3, 0.04, 0.00805, 0.2)
-     end    
-end
-    
-function rel_avg_l(u::Unit)::Float64
-    return (u.avg_l - u.avg_l_min)/(u.avg_l_max - u.avg_l_min)
-end
-
-function cycle!(u::Unit, g_e_raw::Float64, g_i::Float64)
-    # Does one Leabra cycle. Called by the layer cycle method.
-    # g_e_raw = instantaneous, scaled, received input
-    # g_i = fffb inhibition
-    
-    ## updating net input
-    # Ge +=      DtParams.Integ * (1/ DtParams.GTau) * (GeRaw - Ge)
-    u.g_e = u.g_e + u.integ_dt * u.g_e_dt * (g_e_raw - u.g_e)
-    
-    ## Finding membrane potential
-    #Inet = Ge *    (Erev.E  - Vm)    + Gbar.L * (Erev.L - Vm)    +    Gi * (Erev.I - Vm) + Noise
-    i_e::Float64 = u.g_e     * (u.e_rev_e - u.v_m)
-    i_l::Float64 = u.g_bar_l * (u.e_rev_l - u.v_m)    
-    i_i::Float64 =   g_i     * (u.e_rev_i - u.v_m)
-    i_net::Float64 = i_e + i_l + i_i #+ rand() # noise?
-    
-    # almost half-step method for updating v_m (adapt doesn't half step)
-    v_m_half::Float64 = u.v_m + 0.5 * u.integ_dt * u.vm_dt * (i_net - u.adapt)
-    i_e_h::Float64    = u.g_e     * (u.e_rev_e - v_m_half)
-    i_l_h::Float64    = u.g_bar_l * (u.e_rev_l - v_m_half)    
-    i_i_h::Float64    =   g_i     * (u.e_rev_i - v_m_half)
-    i_net_h::Float64  = i_e_h + i_l_h + i_i_h
-    u.v_m    = u.v_m + u.integ_dt * u.vm_dt * (i_net_h - u.adapt)
-
-    # new rate coded version of i_net
-    i_e_r::Float64 = u.g_e     * (u.e_rev_e - u.vm_eq)
-    i_l_r::Float64 = u.g_bar_l * (u.e_rev_l - u.vm_eq)    
-    i_i_r::Float64 =   g_i     * (u.e_rev_i - u.vm_eq)
-    i_net_r::Float64 = i_e_r + i_l_r + i_i_r
-    u.vm_eq = u.vm_eq + u.integ_dt * u.vm_dt * (i_net_r - u.adapt)    
-    
-    # finding whether there's an action potential
-    if u.v_m > u.spk_thr
-        u.spike = true
-        u.v_m = u.vm_r
-        i_net = 0.0
-    else
-        u.spike = false
-    end
-
-    # finding instantaneous rate due to input
-    # if Act < XX1Params.VmActThr && Vm <= X11Params.Thr: 
-    if u.act < nxx1p.VmActThr && u.vm_eq <= u.thr
-        # nwAct = NoisyXX1(Vm - Thr)
-        nw_act::Float64 = nxx1(u.vm_eq - u.thr)[1]
-    else
-        ## Finding activation
-        # finding threshold excitatory conductance
-        # geThr = (Gi * (Erev.I -  Thr)   + Gbar.L * (Erev.L - Thr) / (Thr - Erev.E)
-        g_e_thr::Float64 = (g_i * (u.e_rev_i - u.thr) + u.g_bar_l * (u.e_rev_l - u.thr) - u.adapt) / (u.thr - u.e_rev_e)
-        # nwAct = NoisyXX1(Ge * Gbar.E - geThr)
-        nw_act = nxx1(u.g_e * u.g_bar_e - g_e_thr)[1]
-    end
-
-    # update activity
-    # y(t) = y(t − 1) + dtvm (y∗(x) − y(t − 1))
-    # Act += (1 / DTParams.VmTau) * (nwAct - Act)
-    # vm_dt is 1/vm_tau
-    u.act = u.act + u.integ_dt * u.vm_dt * (nw_act - u.act)
-
-
-    ## Updating adaptation current
-    u.adapt = u.adapt + u.integ_dt * (u.adapt_dt * (u.vm_gain * (u.v_m - u.e_rev_l)  - u.adapt) + u.spike * u.spike_gain)
-          
-    ## updating averages
-    u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act    - u.avg_ss)
-    u.avg_s  =  u.avg_s + u.integ_dt *  u.s_dt * (u.avg_ss - u.avg_s)
-    u.avg_m  =  u.avg_m + u.integ_dt *  u.m_dt * (u.avg_s  - u.avg_m) 
-end
-
-function clamped_cycle!(u::Unit, input::Float64)
-    # This function performs one cycle of the unit when its activty
-    # is clamped to an input value. The activity is set to be equal
-    # to the input, and all the averages are updated accordingly.
-    
-    ## Clamping the activty to the input
-    u.act = input
-    ## updating averages
-    u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act    - u.avg_ss)
-    u.avg_s  =  u.avg_s + u.integ_dt * u.s_dt  * (u.avg_ss - u.avg_s)
-    u.avg_m  =  u.avg_m + u.integ_dt * u.m_dt  * (u.avg_s  - u.avg_m)
-end
-
-
-function updt_avg_l!(u::Unit)
-    # This function updates the long-term average 'avg_l' 
-
-    # AvgL += (1 / Tau) * (Gain * AvgM - AvgL); AvgL = MAX(AvgL, Min)
-    # Tau = 10, Gain = 2.5 (this is a key param -- best value can be lower or higher) Min = .2
-    u.avg_l = u.avg_l + u.avg_l_dt * (u.avg_l_gain * u.avg_m - u.avg_l)
-    u.avg_l = max(u.avg_l, 0.2) #note does the 0.2 nullify u.avg_l_min?
-    
-    # matlab code
-    # if u.avg_m > 0.2
-    #     u.avg_l = u.avg_l + u.avg_l_dt*(u.avg_l_max - u.avg_m)
-    # else
-    #     u.avg_l = u.avg_l + u.avg_l_dt*(u.avg_l_min - u.avg_m)
-    # end
-end
-
-function reset!(u::Unit, random::Bool=false)
-    # This function sets the activity to a random value, and sets
-    # all activity time averages equal to that value.
-    # Used to begin trials from a random stationary point.
-    if random
-        u.act = rand(Uniform(0.05,0.95))
-    else
-        u.act = 0.0
-    end
-    u.avg_ss = u.act
-    u.avg_s = u.act
-    u.avg_m = u.act
-    u.avg_l = u.act
-    u.g_e   = 0.0
-    u.v_m   = 0.3
-    u.vm_eq = 0.3
-    u.adapt = 0.0            
-    u.spike = 0.0            
-end
 
 ######################################################################################################
 # NXX1 Functions
@@ -332,6 +127,213 @@ function nxx1(points, xp::NXX1Parameters = nxx1p)::Array{Float64}
         results[index] = NoisyXX1(value, xp)
     end
     return results
+end
+
+
+######################################################################################################
+# Unit Functions
+#
+
+# g = conductance
+#       ge = excitatory conductance - net excitatory input to the neuron
+#       gi = inhibitory conductance - net inhibitory input to the neuron
+# E = driving potential
+#       Ee = excitatory driving potential
+# V = voltage potential
+#       Vm = membrane potential
+#       Vmr = reset potential = v_reset
+# 0 = action potential threshold = thr = spk_thr
+# I = current
+# dtvm = rate constant that determines how fast membrance potential changes
+#       dtvm = vm_dt = ac.Dt.VmDt = v_dt
+
+# Summary of Neuron Equations and Normalized Parameters
+# Table 2.1 From CCN 4th Ed.
+# Parameter     Bio Val     Norm Val
+# Time	        0.001 sec	1ms 
+# Current	    1x10−8 A 	10 nA 
+# Capacitance   1x10−12 F 	1pF 
+# GbarL (leak)  10 nS	    0.1
+# GbarE (excite)100 nS 	    1
+# ErevI (inhib)	-75mV 	    0.25
+# θ (Thr)	     -50mV	    0.5
+# Voltage 	    100mV	    0..2
+# Conductance 	1x10−9 S	1 nS
+# C (memb cap) 	281 pF	    Dt = .355
+# GBarI (inhib) 100 nS	    1
+# ErevL (leak) 	-70mV	    0.3
+# ErevE (excite)0mV	        1
+# SpikeThr	    20mV	    1.2
+
+
+mutable struct Unit # rate code approximation
+    act::Float64        # = 0.2           # "firing rate" of the unit
+    avg_ss::Float64     # = act           # super-short time-scale activation average
+    avg_s::Float64      # = act           # short time-scale activation average
+    avg_m::Float64      # = act           # medium time-scale activation average
+    avg_l::Float64      # = 0.1           # long time-scale average of medium-time scale (trial level) activation, used for the BCM-style floating threshold in XCAL  
+    g_e::Float64        # = 0.0           # net input. Asymptotically approaches g_e_raw (see cycle).
+    v_m::Float64        # = 0.3           # membrane potential
+    vm_eq::Float64      # = 0.3           # a version of v_m that doesn't reset with spikes
+    adapt::Float64      # = 0.0           # adaptation, as in the AdEx model 
+    spike::Bool         # = false         # a flag that indicates spiking threshold was crossed
+
+    # constants
+    # const g_bar_e::Float64     # = 0.3
+    # const g_bar_l::Float64     # = 0.3
+    const g_e_dt::Float64     # = 1/1.4   # time step constant for update of 'g_e'
+    const integ_dt::Float64   # = 1.0     # time step constant for integration of cycle dynamics
+    const vm_dt::Float64      # = 1/3.3   # time step constant for membrane potential
+    const l_dn_dt::Float64    # = 1/2.5   # time step constant for avg_l decrease   # TODO never used
+    const adapt_dt::Float64   # = 1/144   # time step constant for adaptation
+    const ss_dt::Float64      # = 0.5     # time step for super-short average
+    const s_dt::Float64       # = 0.5     # time step for short average
+    const m_dt::Float64       # = 0.1     # time step for medium-term average
+    const avg_l_dt::Float64   # = 0.1     # time step for long-term average
+    const avg_l_max::Float64  # = 1.5     # max value of avg_l
+    const avg_l_min::Float64  # = 0.1     # min value of avg_l
+    const avg_l_gain::Float64 # = 2.5     
+    
+    const e_rev_e::Float64    # = 1.0     # excitatory reversal potential
+    const e_rev_i::Float64    # = 0.25    # inhibitory reversal potential
+    const e_rev_l::Float64    # = 0.3     # leak reversal potential
+    const g_bar_l::Float64    # = 0.1     # leak conductance
+    const g_bar_e::Float64    # = 1.0     # excitatory conductance
+    const thr::Float64        # = 0.5     # normalized "rate threshold"
+    const spk_thr::Float64    # = 1.2     # normalized spike threshold
+    const vm_r::Float64       # = 0.3     # reset potential after spike
+    const vm_gain::Float64    # = 0.04    # gain that voltage produces on adaptation
+    const spike_gain::Float64 # = 0.00805 # effect of spikes on adaptation
+    const l_up_inc::Float64   # = 0.2     # increase in avg_l if avg_m has been 'large'   # TODO never used
+    
+    function Unit()
+        return new( 0.2, 0.2, 0.2, 0.2, 0.1, 0.0, 0.3, 0.3, 0.0, false,
+                    1/1.4, 1.0, 1/3.3, 1/2.5, 1/144, 0.5, 0.5, 0.1, 0.1, 1.5, 0.1, 2.5, 1.0, 0.25, 0.3, 0.1, 1.0, 0.5, 1.2, 0.3, 0.04, 0.00805, 0.2)
+     end    
+end
+    
+function rel_avg_l(u::Unit)::Float64
+    return (u.avg_l - u.avg_l_min)/(u.avg_l_max - u.avg_l_min)
+end
+
+function cycle!(u::Unit, g_e_raw::Float64, g_i::Float64, xp::NXX1Parameters = nxx1p)
+    # Does one Leabra cycle. Called by the layer cycle method.
+    # g_e_raw = instantaneous, scaled, received input
+    # g_i = fffb inhibition
+    
+    ## updating net input
+    # Ge +=      DtParams.Integ * (1/ DtParams.GTau) * (GeRaw - Ge)
+    u.g_e = u.g_e + u.integ_dt * u.g_e_dt * (g_e_raw - u.g_e)
+    
+    ## Finding membrane potential
+    #Inet = Ge *    (Erev.E  - Vm)    + Gbar.L * (Erev.L - Vm)    +    Gi * (Erev.I - Vm) + Noise
+    i_e::Float64 = u.g_e     * (u.e_rev_e - u.v_m)
+    i_l::Float64 = u.g_bar_l * (u.e_rev_l - u.v_m)    
+    i_i::Float64 =   g_i     * (u.e_rev_i - u.v_m)
+    i_net::Float64 = i_e + i_l + i_i #+ rand() # noise?
+    
+    # almost half-step method for updating v_m (adapt doesn't half step)
+    v_m_half::Float64 = u.v_m + 0.5 * u.integ_dt * u.vm_dt * (i_net - u.adapt)
+    i_e_h::Float64    = u.g_e     * (u.e_rev_e - v_m_half)
+    i_l_h::Float64    = u.g_bar_l * (u.e_rev_l - v_m_half)    
+    i_i_h::Float64    =   g_i     * (u.e_rev_i - v_m_half)
+    i_net_h::Float64  = i_e_h + i_l_h + i_i_h
+    u.v_m    = u.v_m + u.integ_dt * u.vm_dt * (i_net_h - u.adapt)
+
+    # new rate coded version of i_net
+    i_e_r::Float64 = u.g_e     * (u.e_rev_e - u.vm_eq)
+    i_l_r::Float64 = u.g_bar_l * (u.e_rev_l - u.vm_eq)    
+    i_i_r::Float64 =   g_i     * (u.e_rev_i - u.vm_eq)
+    i_net_r::Float64 = i_e_r + i_l_r + i_i_r
+    u.vm_eq = u.vm_eq + u.integ_dt * u.vm_dt * (i_net_r - u.adapt)    
+    
+    # finding whether there's an action potential
+    if u.v_m > u.spk_thr
+        u.spike = true
+        u.v_m = u.vm_r
+        i_net = 0.0
+    else
+        u.spike = false
+    end
+
+    # finding instantaneous rate due to input
+    # if Act < XX1Params.VmActThr && Vm <= X11Params.Thr: 
+    if u.act < xp.VmActThr && u.vm_eq <= u.thr
+        # nwAct = NoisyXX1(Vm - Thr)
+        nw_act::Float64 = nxx1(u.vm_eq - u.thr)[1]
+    else
+        ## Finding activation
+        # finding threshold excitatory conductance
+        # geThr = (Gi * (Erev.I -  Thr)   + Gbar.L * (Erev.L - Thr) / (Thr - Erev.E)
+        g_e_thr::Float64 = (g_i * (u.e_rev_i - u.thr) + u.g_bar_l * (u.e_rev_l - u.thr) - u.adapt) / (u.thr - u.e_rev_e)
+        # nwAct = NoisyXX1(Ge * Gbar.E - geThr)
+        nw_act = nxx1(u.g_e * u.g_bar_e - g_e_thr)[1]
+    end
+
+    # update activity
+    # y(t) = y(t − 1) + dtvm (y∗(x) − y(t − 1))
+    # Act += (1 / DTParams.VmTau) * (nwAct - Act)
+    # vm_dt is 1/vm_tau
+    u.act = u.act + u.integ_dt * u.vm_dt * (nw_act - u.act)
+
+
+    ## Updating adaptation current
+    u.adapt = u.adapt + u.integ_dt * (u.adapt_dt * (u.vm_gain * (u.v_m - u.e_rev_l)  - u.adapt) + u.spike * u.spike_gain)
+          
+    ## updating averages
+    u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act    - u.avg_ss)
+    u.avg_s  =  u.avg_s + u.integ_dt *  u.s_dt * (u.avg_ss - u.avg_s)
+    u.avg_m  =  u.avg_m + u.integ_dt *  u.m_dt * (u.avg_s  - u.avg_m) 
+end
+
+function clamped_cycle!(u::Unit, input::Float64)
+    # This function performs one cycle of the unit when its activty
+    # is clamped to an input value. The activity is set to be equal
+    # to the input, and all the averages are updated accordingly.
+    
+    ## Clamping the activty to the input
+    u.act = input
+    ## updating averages
+    u.avg_ss = u.avg_ss + u.integ_dt * u.ss_dt * (u.act    - u.avg_ss)
+    u.avg_s  =  u.avg_s + u.integ_dt * u.s_dt  * (u.avg_ss - u.avg_s)
+    u.avg_m  =  u.avg_m + u.integ_dt * u.m_dt  * (u.avg_s  - u.avg_m)
+end
+
+
+function updt_avg_l!(u::Unit)
+    # This function updates the long-term average 'avg_l' 
+
+    # AvgL += (1 / Tau) * (Gain * AvgM - AvgL); AvgL = MAX(AvgL, Min)
+    # Tau = 10, Gain = 2.5 (this is a key param -- best value can be lower or higher) Min = .2
+    u.avg_l = u.avg_l + u.avg_l_dt * (u.avg_l_gain * u.avg_m - u.avg_l)
+    u.avg_l = max(u.avg_l, 0.2) #note does the 0.2 nullify u.avg_l_min?
+    
+    # matlab code
+    # if u.avg_m > 0.2
+    #     u.avg_l = u.avg_l + u.avg_l_dt*(u.avg_l_max - u.avg_m)
+    # else
+    #     u.avg_l = u.avg_l + u.avg_l_dt*(u.avg_l_min - u.avg_m)
+    # end
+end
+
+function reset!(u::Unit, random::Bool=false)
+    # This function sets the activity to a random value, and sets
+    # all activity time averages equal to that value.
+    # Used to begin trials from a random stationary point.
+    if random
+        u.act = rand(Uniform(0.05,0.95))
+    else
+        u.act = 0.0
+    end
+    u.avg_ss = u.act
+    u.avg_s = u.act
+    u.avg_m = u.act
+    u.avg_l = u.act
+    u.g_e   = 0.0
+    u.v_m   = 0.3
+    u.vm_eq = 0.3
+    u.adapt = 0.0            
+    u.spike = 0.0            
 end
 
 ######################################################################################################
