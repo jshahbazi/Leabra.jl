@@ -402,16 +402,12 @@ function layer(dims::Tuple{Int64, Int64} = (1,1))::Layer
 end
 
 function acts_avg(lay::Layer)::Float64
-    return mean(activities(lay))
+    return mean([unit.act for unit in lay.units])
 end
 
 function activities(lay::Layer)::Array{Float64}
     # returns a vector with the activities of all units
-    acts = zeros(Float64, lay.N)
-    for (index::Int64, unit::Unit) in enumerate(lay.units)
-        acts[index] = unit.act
-    end
-    return transpose(acts)
+    return transpose([unit.act for unit in lay.units])
 end
 
 function scaled_acts(lay::Layer)::Array{Float64}
@@ -906,7 +902,7 @@ function cycle!(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
             end
         end
     end
-    
+
     ## We make a copy of the scaled activity for all layers
     # scaled_acts = zeros(Float64, 1, net.n_lays)
     scaled_acts_array = Array{Vector{Float64}}(undef, net.n_lays)
