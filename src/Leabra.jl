@@ -122,11 +122,7 @@ function NoisyXX1Gain(x::Float64, gain::Float64, xp::NXX1Parameters = nxx1p)::Fl
 end
 
 function nxx1(points, xp::NXX1Parameters = nxx1p)::Array{Float64}
-    results = Array{Float64}(undef, length(points))
-    for (index,value) in enumerate(points)
-        results[index] = NoisyXX1(value, xp)
-    end
-    return results
+    return [NoisyXX1(point, xp) for point in points]
 end
 
 
@@ -343,6 +339,7 @@ end
 mutable struct Layer 
     units::Array{Unit}
     pct_act_scale::Float64
+    scaled_acts_array::Vector{Float64}
     acts_p_avg::Float64
     ge_avg::Float64
     ge_max::Float64
@@ -381,6 +378,7 @@ function layer(dims::Tuple{Int64, Int64} = (1,1))::Layer
     N::Int64 = dims[1]*dims[2]
 
     units::Array{Unit} = [Unit() for i in 1:N]
+    scaled_acts_array = zeros(Float64, N)
     
     acts_avg::Float64  = 0.2
     avg_act_n::Float64  =  1.0
@@ -389,6 +387,7 @@ function layer(dims::Tuple{Int64, Int64} = (1,1))::Layer
 
     lay = Layer(units, 
                 pct_act_scale, 
+                scaled_acts_array,
                 acts_avg, 
                 0.0, # ge_avg
                 0.0, # maxvsavg
@@ -903,9 +902,9 @@ function cycle!(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
 
     ## We make a copy of the scaled activity for all layers
     # scaled_acts = zeros(Float64, 1, net.n_lays)
-    scaled_acts_array = Array{Vector{Float64}}(undef, net.n_lays)
+    # scaled_acts_array = Array{Vector{Float64}}(undef, net.n_lays)
     for lay::Int64 in 1:net.n_lays
-        scaled_acts_array[lay] = scaled_acts(net.layers[lay])
+        net.layers[lay].scaled_acts_array = scaled_acts(net.layers[lay])
     end
     
     ## For each unclamped layer, we put all its scaled inputs in one
@@ -921,7 +920,7 @@ function cycle!(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
             for send::Int64 in 1:net.n_lays
                 if net.connections[recv, send] > 0
                     n_sends = n_sends + 1
-                    long_input[(1 + n_inps):(n_inps + net.layers[send].N)] = wt_scale_rel[n_sends] .* scaled_acts_array[send]
+                    long_input[(1 + n_inps):(n_inps + net.layers[send].N)] = wt_scale_rel[n_sends] .* net.layers[send].scaled_acts_array
                     n_inps = n_inps + net.layers[send].N
                 end
             end
