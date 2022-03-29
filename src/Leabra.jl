@@ -414,11 +414,7 @@ end
 
 function scaled_acts(lay::Layer)::Array{Float64}
     # returns a vector with the scaled activities of all units
-    acts = Array{Float64}(undef, lay.N)
-    for (index::Int64, unit::Unit) in enumerate(lay.units)
-        acts[index] = unit.act
-    end
-    return lay.pct_act_scale .* acts
+    return [(lay.pct_act_scale * unit.act) for unit in lay.units]
 end
 
 function cycle!(lay::Layer, raw_inputs::Array{Float64}, ext_inputs::Array{Float64})
