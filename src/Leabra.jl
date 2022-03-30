@@ -507,8 +507,8 @@ function updt_long_avgs!(lay::Layer)
     # should have the calculation in WtScaleSpec::SLayActScale, in
     # LeabraConSpec.cpp 
     lay.acts_p_avg = lay.acts_p_avg + lay.avg_act_dt * (acts_avg(lay) - lay.acts_p_avg)
-    r_avg_act_n::Float64 = max(round(lay.acts_p_avg * lay.N), 1.0)
-    lay.pct_act_scale = 1.0/(r_avg_act_n + 2.0)  
+    # r_avg_act_n::Float64 = max(round(lay.acts_p_avg * lay.N), 1.0)
+    lay.pct_act_scale = 1.0/(max(round(lay.acts_p_avg * lay.N), 1.0) + 2.0)  
 end
 
 function reset!(lay::Layer)
@@ -890,19 +890,17 @@ function cycle!(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     end
     
     ## First we set all clamped layers to their input values
-    clamped_lays = zeros(Float64, 1, net.n_lays)
+    clamped_lays = zeros(Bool, 1, net.n_lays)
     if clamp_inp
         for lay::Int64 in 1:net.n_lays
             if any(inputs[lay] .> 0.0) # if ~isempty(inputs[lay])
                 clamped_cycle!(net.layers[lay], inputs[lay])
-                clamped_lays[lay] = 1
+                clamped_lays[lay] = true
             end
         end
     end
 
-    ## We make a copy of the scaled activity for all layers
-    # scaled_acts = zeros(Float64, 1, net.n_lays)
-    # scaled_acts_array = Array{Vector{Float64}}(undef, net.n_lays)
+    ## We calculate the scaled activity for all layers
     for lay::Int64 in 1:net.n_lays
         net.layers[lay].scaled_acts_array = scaled_acts(net.layers[lay])
     end
@@ -910,9 +908,9 @@ function cycle!(net::Network, inputs::Vector{Array{Float64}}, clamp_inp::Bool)
     ## For each unclamped layer, we put all its scaled inputs in one
     #  column vector, and call its cycle function with that vector
     for recv::Int64 in 1:net.n_lays
-        if all(clamped_lays[recv] .== 0.0) # if the layer is not clamped
+        if !clamped_lays[recv] # if the layer is not clamped
             # for each 'recv' layer we find its input vector
-            long_input = zeros(Float64, 1, net.n_units) # preallocating for speed
+            long_input = zeros(Float64, 1, net.n_units)
             n_inps::Int64 = 0  # will have the # of input units to 'recv'
             n_sends::Int64 = 0 # will have the # of layers sending to 'recv'
             conns::BitArray = (net.connections[recv, :] .> 0.0)
@@ -1014,10 +1012,10 @@ function train_network!(net::Network, inputs::Matrix{Array{Float64}}, n_epochs::
     n_plus::Int64 = 25  # number of plus cycles per trial
     n_trials::Int64 = size(inputs)[1]
 
-    lrate_sched::Array{Float64} = collect(LinRange(0.8, 0.2, n_epochs))
+    lrate_sched::Vector{Float64} = collect(LinRange(0.8, 0.2, n_epochs))
     errors = zeros(Float64, n_epochs,n_trials)
     for epoch::Int64 in 1:n_epochs
-        randomized_input::Array{Int64} = randperm(n_trials)
+        randomized_input::Vector{Int64} = randperm(n_trials)::Vector{Int64}
         net.lrate = lrate_sched[epoch]
         for trial::Int64 in 1:n_trials
             Leabra.reset!(net)
@@ -1025,16 +1023,17 @@ function train_network!(net::Network, inputs::Matrix{Array{Float64}}, n_epochs::
 
             # Minus phase
             # Clamp input layer
+            # println(typeof(net.n_lays))
             sel_data_array::Array{Array{Float64}} = clamp_data(inputs, net.n_lays, [1], selected_data)
-            for minus in 1:n_minus
+            for _ in 1:n_minus
                 Leabra.cycle!(net, sel_data_array, true)
             end
-            outs::Array{Float64, 2} = (Leabra.activities(net.layers[net.n_lays]))
+            outs::Matrix{Float64} = Leabra.activities(net.layers[net.n_lays])
 
             # Plus phase
             # Clamp input and output layer
             sel_data_array = clamp_data(inputs, net.n_lays, [1,net.n_lays], selected_data)
-            for plus in 1:n_plus
+            for _ in 1:n_plus
                 Leabra.cycle!(net, sel_data_array, true);
             end
             Leabra.updt_long_avgs!(net)
@@ -1043,7 +1042,7 @@ function train_network!(net::Network, inputs::Matrix{Array{Float64}}, n_epochs::
             Leabra.XCAL_learn!(net)
             
             # Errors
-            errors[epoch, selected_data] = 1 - sum(outs .* transpose(inputs[selected_data, 2][:])) / ( norm(outs) * norm(transpose(inputs[selected_data, 2][:])) );                    
+            errors[epoch, selected_data] = 1.0 - sum(outs .* transpose(inputs[selected_data, 2][:])) / ( norm(outs) * norm(transpose(inputs[selected_data, 2][:])) );                    
         end
     end
 
