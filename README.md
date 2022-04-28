@@ -12,10 +12,10 @@ This code requires Julia 1.8.  It was developed with the beta version, but reall
 
 It will install the following libraries into the project environment
 
-- Distributions
-- LinearAlgebra
-- Plots
-- Random
+- Distributions.jl
+- LinearAlgebra.jl
+- Plots.jl
+- Random.jl
 
 Ways to run the example:
 
