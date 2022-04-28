@@ -4,8 +4,6 @@ This is a Julia conversion of the old version of the Leabra algorithm written in
 
 The initial commits of this are almost an exact conversion, save for implementation of the NXX1 function which is based on the Go code found here: <https://github.com/emer/leabra>
 
-As time goes on, the aim of this project is to make it more Julian and update it to the current version of Leabra.
-
 An example network that can give you an idea of how to use this can be found in *example_network.jl*
 
 # Installation
@@ -26,7 +24,7 @@ Ways to run the example:
 - Run `julia --project=. -e "using Pkg; Pkg.instantiate()"`
 - Run `julia --project=. example_network.jl`
 
-If you want to view the plots, you can just copy and paste the code into a Jupyter notebook.  Or, you can run it from the Julia shell via these steps:
+Or, you can run it from the Julia shell via these steps:
 
 - Run `julia --project=.`
 - From the `julia>` prompt, run: `include("example_network.jl")`
