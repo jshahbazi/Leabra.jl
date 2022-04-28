@@ -5,7 +5,7 @@ using Plots
 
 include("./src/Leabra.jl")
 
-# This is an example network designed simply be a pattern associator.
+# This is an example network designed simply to be a pattern associator.
 # This is pretty much the example from the Leabra Matlab code by Sergio Verduzco-Flores.
 
 # 3 layers and their dimensions
@@ -32,7 +32,7 @@ n_inputs = 5
 inputs = Leabra.create_patterns(n_inputs) # assumes a 5x5 input and output layer
 
 n_epochs = 20
-errors = Leabra.train_network!(net, inputs, n_epochs)
+errors = Leabra.train_network!(net, inputs, n_epochs);
 
 mean_errs = mean(errors, dims=2);
 println("Mean errors: $mean_errs")
